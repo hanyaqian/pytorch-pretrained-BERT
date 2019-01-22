@@ -217,6 +217,18 @@ class BertSelfAttention(nn.Module):
 
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
+        self.mask_heads = []
+        self._head_mask = None
+
+    @property
+    def head_mask(self):
+        if self._head_mask is None:
+            self._head_mask = torch.ones(self.num_attention_heads)
+            for head_idx in self.mask_heads:
+                self._head_mask[head_idx] = 0
+        return self._head_mask.view(1, self.num_attention_heads, 1, 1)
+
+
     def transpose_for_scores(self, x):
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
         x = x.view(*new_x_shape)
@@ -243,6 +255,11 @@ class BertSelfAttention(nn.Module):
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
         attention_probs = self.dropout(attention_probs)
+        
+        # Mask heads
+        # attention_probs has shape bsz x n_heads x N x N
+        if len(self.mask_heads) > 0:
+            attention_probs = attention_probs * self.head_mask.to(attention_probs.device)
 
         context_layer = torch.matmul(attention_probs, value_layer)
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()

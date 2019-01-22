@@ -385,6 +385,11 @@ def main():
                         help="Loss scaling to improve fp16 numeric stability. Only used when fp16 set to True.\n"
                              "0 (default value): dynamic loss scaling.\n"
                              "Positive power of 2: static loss scaling value.\n")
+    parser.add_argument("--attention-mask-heads", default="", type=str, nargs="*",
+            help="[layer]:[head1],[head2]...")
+    parser.add_argument('--reverse-head-mask',
+                        action='store_true',
+                        help="Mask all heads except those specified by `--attention-mask-heads`")
 
     args = parser.parse_args()
 
@@ -577,6 +582,19 @@ def main():
         eval_dataloader = DataLoader(eval_data, sampler=eval_sampler, batch_size=args.eval_batch_size)
 
         model.eval()
+        # Prune heads
+        for descriptor in args.attention_mask_heads:
+            layer, heads = descriptor.split(":")
+            layer = int(layer) - 1
+            heads = [int(head) - 1 for head in heads.split(",")]
+            self_att = model.bert.encoder.layer[layer].attention.self
+            if args.reverse_head_mask:
+                excluded_heads = set(heads)
+                heads = [head for head in range(self_att.num_attention_heads)
+                         if head not in excluded_heads]
+            self_att.mask_heads = heads
+            self_att._head_mask = None
+
         eval_loss, eval_accuracy = 0, 0
         nb_eval_steps, nb_eval_examples = 0, 0
  
