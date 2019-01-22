@@ -21,6 +21,7 @@ import json
 import random
 
 import torch
+import numpy as np
 
 from pytorch_pretrained_bert import (BertConfig, BertModel, BertForMaskedLM,
                                      BertForNextSentencePrediction, BertForPreTraining,
@@ -218,6 +219,28 @@ class BertModelTest(unittest.TestCase):
                 list(result["logits"].size()),
                 [self.batch_size, self.num_labels])
 
+        def create_bert_for_sequence_classification_attn(self, config, input_ids, token_type_ids, input_mask, sequence_labels, token_labels):
+            # Disable attention dropout
+            drop = config.attention_probs_dropout_prob
+            config.attention_probs_dropout_prob = 0.0
+            model = BertForSequenceClassification(config=config, num_labels=self.num_labels)
+            config.attention_probs_dropout_prob = drop
+            loss, _ = model(input_ids, token_type_ids, input_mask, sequence_labels, return_att=True)
+            logits, attn = model(input_ids, token_type_ids, input_mask, return_att=True)
+            outputs = {
+                "loss": loss,
+                "logits": logits,
+                "attn": attn,
+            }
+            return outputs
+        
+        def check_bert_for_sequence_classification_attn_output(self, result):
+            for attn in result["attn"]:
+                # Shape
+                self.parent.assertTupleEqual(attn.size(), (self.batch_size, self.num_attention_heads, self.seq_length, self.seq_length))
+                # Value
+                sums = attn.detach().sum(dim=-1).numpy()
+                self.parent.assertTrue(np.allclose(np.minimum(np.abs(sums-1), np.abs(sums)), np.zeros_like(sums), atol=1e-5))
 
         def create_bert_for_token_classification(self, config, input_ids, token_type_ids, input_mask, sequence_labels, token_labels):
             model = BertForTokenClassification(config=config, num_labels=self.num_labels)
@@ -268,6 +291,11 @@ class BertModelTest(unittest.TestCase):
         output_result = tester.create_bert_for_sequence_classification(*config_and_inputs)
         tester.check_bert_for_sequence_classification_output(output_result)
         tester.check_loss_output(output_result)
+
+        output_result = tester.create_bert_for_sequence_classification_attn(*config_and_inputs)
+        tester.check_bert_for_sequence_classification_attn_output(output_result)
+        tester.check_loss_output(output_result)
+
 
         output_result = tester.create_bert_for_token_classification(*config_and_inputs)
         tester.check_bert_for_token_classification_output(output_result)
