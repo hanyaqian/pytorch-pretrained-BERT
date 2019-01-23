@@ -609,7 +609,7 @@ def main():
 
             with torch.no_grad():
                 tmp_eval_loss = model(input_ids, segment_ids, input_mask, label_ids)
-                logits, attns = model(input_ids, segment_ids, input_mask)
+                logits, attns = model(input_ids, segment_ids, input_mask, return_att=True)
 
             logits = logits.detach().cpu().numpy()
             label_ids = label_ids.to('cpu').numpy()
@@ -628,7 +628,7 @@ def main():
                     print("Attention:")
                     for layer, attn in enumerate(attns):
                         for head in range(model.bert.encoder.layer[layer].attention.self.num_attention_heads):
-                            print("\t".join([f"{x:.5f}" for x in attn[head].flatten()])
+                            print("\t".join([f"{x:.5f}" for x in attn[head].flatten()]))
 
         eval_loss = eval_loss / nb_eval_steps
         eval_accuracy = eval_accuracy / nb_eval_examples
