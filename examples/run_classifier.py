@@ -604,6 +604,14 @@ def main():
             attn_partition = 1
             attns_to_save = {}
 
+        def entropy(p, dim=None):
+            plogp = p * torch.log(p)
+            plogp[p == 0] = 0
+            return plogp.sum(dim=dim)
+
+        attn_entropy = torch.zeros(model.bert.config.num_hidden_layers, model.bert.config.num_attention_heads)
+        entropy_num = 0
+
         for input_ids, input_mask, segment_ids, label_ids in tqdm(eval_dataloader, desc="Evaluating"):
             input_ids = input_ids.to(device)
             input_mask = input_mask.to(device)
@@ -624,6 +632,12 @@ def main():
             nb_eval_examples += input_ids.size(0)
             nb_eval_steps += 1
 
+            # Record attention entropy
+            for layer, attn in enumerate(attns):
+                attn_entropy[layer] += (entropy(attn, dim=-1) * input_mask.unsqueeze(1)).sum(-1).sum(0).detach()
+                entropy_num+=input_mask.detach().sum().data
+
+
             if args.save_attention_probs != "":
                 attns = [attn.detach().cpu() for attn in attns]
                 for batch_idx in range(input_ids.size(0)):
@@ -641,6 +655,11 @@ def main():
                   'eval_accuracy': eval_accuracy,
                   'global_step': global_step,
                   'loss': loss}
+
+        # Print layer/headwise entropy
+        attn_entropy /= entropy_num
+        for layer in range(len(attn_entropy)):
+            print("\t".join(f"{H:.5f}" for H in attn_entropy[layer].data))
 
         if args.save_attention_probs != "":
             torch.save(attns_to_save, f"{args.save_attention_probs}.{attn_partition}")
