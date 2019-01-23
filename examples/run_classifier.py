@@ -390,9 +390,8 @@ def main():
     parser.add_argument('--reverse-head-mask',
                         action='store_true',
                         help="Mask all heads except those specified by `--attention-mask-heads`")
-    parser.add_argument('--print-attention-probs',
-                        action='store_true',
-                        help="Print attention")
+    parser.add_argument('--save-attention-probs', default="", type=str
+                        help="Save attention to file")
 
     args = parser.parse_args()
 
@@ -600,7 +599,10 @@ def main():
 
         eval_loss, eval_accuracy = 0, 0
         nb_eval_steps, nb_eval_examples = 0, 0
-        idx = 0
+        if args.save_attention_probs != "":
+            example_idx = 0
+            attns_to_save = {}
+
         for input_ids, input_mask, segment_ids, label_ids in tqdm(eval_dataloader, desc="Evaluating"):
             input_ids = input_ids.to(device)
             input_mask = input_mask.to(device)
@@ -622,13 +624,10 @@ def main():
             nb_eval_steps += 1
 
             if args.print_attention_probs:
-                attns = [attn.detach().cpu().numpy() for attn in attns]
-                for i in range(input_ids.size(0)):
-                    print(f"Example:\t{eval_examples[idx]}")
-                    print("Attention:")
-                    for layer, attn in enumerate(attns):
-                        for head in range(model.bert.encoder.layer[layer].attention.self.num_attention_heads):
-                            print("\t".join([f"{x:.5f}" for x in attn[head].flatten()]))
+                attns = [attn.detach().cpu() for attn in attns]
+                for batch_idx in range(input_ids.size(0)):
+                    attns_to_save[eval_examples[example_idx]] = [attn[batch_idx] for attn in attns]
+                    example_idx += 1
 
         eval_loss = eval_loss / nb_eval_steps
         eval_accuracy = eval_accuracy / nb_eval_examples
@@ -637,6 +636,9 @@ def main():
                   'eval_accuracy': eval_accuracy,
                   'global_step': global_step,
                   'loss': loss}
+
+        if args.save_attention_probs != "":
+            torch.save(attns_to_save, args.save_attention_probs)
 
         output_eval_file = os.path.join(args.output_dir, "eval_results.txt")
         with open(output_eval_file, "w") as writer:
