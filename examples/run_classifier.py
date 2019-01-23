@@ -390,7 +390,7 @@ def main():
     parser.add_argument('--reverse-head-mask',
                         action='store_true',
                         help="Mask all heads except those specified by `--attention-mask-heads`")
-    parser.add_argument('--save-attention-probs', default="", type=str
+    parser.add_argument('--save-attention-probs', default="", type=str,
                         help="Save attention to file")
 
     args = parser.parse_args()
@@ -601,6 +601,7 @@ def main():
         nb_eval_steps, nb_eval_examples = 0, 0
         if args.save_attention_probs != "":
             example_idx = 0
+            attn_partition = 1
             attns_to_save = {}
 
         for input_ids, input_mask, segment_ids, label_ids in tqdm(eval_dataloader, desc="Evaluating"):
@@ -623,11 +624,15 @@ def main():
             nb_eval_examples += input_ids.size(0)
             nb_eval_steps += 1
 
-            if args.print_attention_probs:
+            if args.save_attention_probs != "":
                 attns = [attn.detach().cpu() for attn in attns]
                 for batch_idx in range(input_ids.size(0)):
                     attns_to_save[eval_examples[example_idx]] = [attn[batch_idx] for attn in attns]
                     example_idx += 1
+                    if (example_idx+1) % 100 == 0:
+                        torch.save(attns_to_save, f"{args.save_attention_probs}.{attn_partition}")
+                        attns_to_save = {}
+                        attn_partition += 1
 
         eval_loss = eval_loss / nb_eval_steps
         eval_accuracy = eval_accuracy / nb_eval_examples
@@ -638,7 +643,7 @@ def main():
                   'loss': loss}
 
         if args.save_attention_probs != "":
-            torch.save(attns_to_save, args.save_attention_probs)
+            torch.save(attns_to_save, f"{args.save_attention_probs}.{attn_partition}")
 
         output_eval_file = os.path.join(args.output_dir, "eval_results.txt")
         with open(output_eval_file, "w") as writer:
