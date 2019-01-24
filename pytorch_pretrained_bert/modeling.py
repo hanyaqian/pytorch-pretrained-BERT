@@ -152,6 +152,22 @@ class BertConfig(object):
         """Serializes this instance to a JSON string."""
         return json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n"
 
+    @classmethod
+    def dummy_config(cls, vocab_size):
+        return cls(
+            vocab_size,
+            hidden_size=8,
+            num_hidden_layers=3,
+            num_attention_heads=4,
+            intermediate_size=17,
+            hidden_act="gelu",
+            hidden_dropout_prob=0.1,
+            attention_probs_dropout_prob=0.1,
+            max_position_embeddings=512,
+            type_vocab_size=2,
+            initializer_range=0.02
+        )
+
 
 try:
     from apex.normalization.fused_layer_norm import FusedLayerNorm as BertLayerNorm

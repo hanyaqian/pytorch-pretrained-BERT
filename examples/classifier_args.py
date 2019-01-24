@@ -48,6 +48,11 @@ def get_base_parser():
         "than this will be padded."
     )
     parser.add_argument(
+        "--dry_run",
+        action='store_true',
+        help="Run all steps with a small model and sample data."
+    )
+    parser.add_argument(
         "--do_train",
         action='store_true',
         help="Whether to run training."

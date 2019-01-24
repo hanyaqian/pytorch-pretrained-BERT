@@ -19,6 +19,7 @@
 import os
 import random
 from tqdm import tqdm, trange
+import tempfile
 
 import numpy as np
 import torch
@@ -26,7 +27,10 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
 
 from pytorch_pretrained_bert.tokenization import BertTokenizer
-from pytorch_pretrained_bert.modeling import BertForSequenceClassification
+from pytorch_pretrained_bert.modeling import (
+    BertForSequenceClassification,
+    BertConfig,
+)
 from pytorch_pretrained_bert.optimization import BertAdam
 from pytorch_pretrained_bert.file_utils import PYTORCH_PRETRAINED_BERT_CACHE
 
@@ -46,6 +50,17 @@ def warmup_linear(x, warmup=0.002):
     return 1.0 - x
 
 
+def prepare_dry_run(args):
+    args.no_cuda = True
+    args.train_batch_size = 3
+    args.eval_batch_size = 3
+    args.do_train = True
+    args.do_eval = True
+    args.do_prune = True
+    args.output_dir = tempfile.mkdtemp()
+    return args
+
+
 def main():
     # Arguments
     parser = classifier_args.get_base_parser()
@@ -53,6 +68,9 @@ def main():
     classifier_args.fp16_args(parser)
     classifier_args.eval_args(parser)
     args = parser.parse_args()
+
+    if args.dry_run:
+        args = prepare_dry_run(args)
 
     if args.local_rank == -1 or args.no_cuda:
         device = torch.device(
@@ -80,7 +98,9 @@ def main():
         )
 
     args.train_batch_size = int(
-        args.train_batch_size / args.gradient_accumulation_steps)
+        args.train_batch_size
+        / args.gradient_accumulation_steps
+    )
 
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -143,12 +163,19 @@ def main():
         )
 
     # Prepare model
-    model = BertForSequenceClassification.from_pretrained(
-        args.bert_model,
-        cache_dir=PYTORCH_PRETRAINED_BERT_CACHE /
-        f"distributed_{args.local_rank}",
-        num_labels=num_labels
-    )
+
+    if args.dry_run:
+        model = BertForSequenceClassification(
+            BertConfig.dummy_config(tokenizer.vocab_size),
+            num_labels=num_labels
+        )
+    else:
+        model = BertForSequenceClassification.from_pretrained(
+            args.bert_model,
+            cache_dir=PYTORCH_PRETRAINED_BERT_CACHE /
+            f"distributed_{args.local_rank}",
+            num_labels=num_labels
+        )
     if args.fp16:
         model.half()
     model.to(device)
