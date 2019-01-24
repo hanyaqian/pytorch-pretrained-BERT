@@ -55,11 +55,11 @@ class DataProcessor(object):
 
     def get_dummy_train_examples(self, data_dir):
         """Gets a collection of `InputExample`s for the train set."""
-        self.get_train_examples(data_dir)[:20]
+        return self.get_train_examples(data_dir)[:20]
 
     def get_dummy_dev_examples(self, data_dir):
         """Gets a collection of `InputExample`s for the dev set."""
-        self.get_dev_examples(data_dir)[:10]
+        return self.get_dev_examples(data_dir)[:10]
 
     @classmethod
     def _read_tsv(cls, input_file, quotechar=None):

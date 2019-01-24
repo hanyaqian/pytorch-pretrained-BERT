@@ -137,7 +137,10 @@ def main():
     num_train_steps = None
     if args.do_train or args.do_prune:
         # Prepare training data
-        train_examples = processor.get_train_examples(args.data_dir)
+        if args.dry_run:
+            train_examples = processor.get_dummy_train_examples(args.data_dir)
+        else:
+            train_examples = processor.get_train_examples(args.data_dir)
         train_data = data.prepare_tensor_dataset(
             train_examples,
             label_list,
@@ -166,7 +169,7 @@ def main():
 
     if args.dry_run:
         model = BertForSequenceClassification(
-            BertConfig.dummy_config(tokenizer.vocab_size),
+            BertConfig.dummy_config(len(tokenizer.vocab)),
             num_labels=num_labels
         )
     else:
@@ -282,9 +285,13 @@ def main():
 
     # Load a trained model that you have fine-tuned
     model_state_dict = torch.load(output_model_file)
-    model = BertForSequenceClassification.from_pretrained(
-        args.bert_model, state_dict=model_state_dict, num_labels=num_labels)
-    model.to(device)
+    if not args.dry_run:
+        model = BertForSequenceClassification.from_pretrained(
+            args.bert_model,
+            state_dict=model_state_dict,
+            num_labels=num_labels
+        )
+        model.to(device)
 
     n_layers = model.bert.config.num_hidden_layers
     n_heads = model.bert.config.num_attention_heads
@@ -300,7 +307,9 @@ def main():
         logger.info(f"  Batch size = {args.train_batch_size}")
         logger.info(f"  Num steps = {n_prune_steps}")
         prune_iterator = tqdm(train_dataloader, desc="Iteration")
-        head_importance = torch.zeros(n_layers, n_heads).cuda()
+        head_importance = torch.zeros(n_layers, n_heads)
+        if n_gpu > 0:
+            head_importance = head_importance.cuda()
         tot_tokens = 0
 
         for step, batch in enumerate(prune_iterator):
@@ -332,7 +341,10 @@ def main():
     # ==== EVALUATE ====
     if args.do_eval and is_main:
         # Prepare data
-        eval_examples = processor.get_dev_examples(args.data_dir)
+        if args.dry_run:
+            eval_examples = processor.get_dummy_dev_examples(args.data_dir)
+        else:
+            eval_examples = processor.get_dev_examples(args.data_dir)
         eval_data = data.prepare_tensor_dataset(
             eval_examples,
             label_list,
@@ -387,8 +399,13 @@ def main():
             KL = H_pq - H_p
             return KL
 
-        attn_entropy = torch.zeros(n_layers, n_heads).cuda()
-        attn_kl = torch.zeros(n_layers, n_heads, n_heads).cuda()
+        attn_entropy = torch.zeros(n_layers, n_heads)
+        attn_kl = torch.zeros(n_layers, n_heads, n_heads)
+
+        if n_gpu > 0:
+            attn_entropy = attn_entropy.cuda()
+            attn_kl = attn_kl.cuda()
+
         tot_tokens = 0
 
         eval_iterator = tqdm(eval_dataloader, desc="Evaluating")
