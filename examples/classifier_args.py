@@ -129,6 +129,32 @@ def training_args(parser):
     )
 
 
+def pruning_args(parser):
+    prune_group = parser.add_argument_group("Pruning")
+    prune_group.add_argument(
+        "--prune_percent",
+        default=50,
+        type=float,
+        help="Percentage of heads to prune."
+    )
+    prune_group.add_argument(
+        "--prune_number",
+        default=None,
+        type=int,
+        help="Number of heads to prune. Overrides `--prune_percent`"
+    )
+    prune_group.add_argument(
+        "--normalize_pruning_by_layer",
+        action='store_true',
+        help="Normalize importance score by layers for pruning"
+    )
+    prune_group.add_argument(
+        "--eval_pruned",
+        action='store_true',
+        help="Evaluate the network after pruning"
+    )
+
+
 def eval_args(parser):
     eval_group = parser.add_argument_group("Evaluation")
     eval_group.add_argument(

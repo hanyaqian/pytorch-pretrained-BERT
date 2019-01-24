@@ -66,6 +66,7 @@ def main():
     parser = classifier_args.get_base_parser()
     classifier_args.training_args(parser)
     classifier_args.fp16_args(parser)
+    classifier_args.pruning_args(parser)
     classifier_args.eval_args(parser)
     args = parser.parse_args()
 
@@ -333,11 +334,40 @@ def main():
             tot_tokens += input_mask.float().detach().sum().data
         head_importance /= tot_tokens
         # Layerwise importance normalization
-        head_importance /= (head_importance ** 2).sum(-1).sqrt().unsqueeze(-1)
+        if args.normalize_pruning_by_layer:
+            norm_by_layer = (head_importance ** 2).sum(-1).sqrt()
+            head_importance /= norm_by_layer.unsqueeze(-1) + 1e-20
         print("Head importance scores")
         for layer in range(n_layers):
             layer_importance = head_importance[layer].cpu().data
             print("\t".join(f"{x:.5f}" for x in layer_importance))
+
+        n_to_prune = int(n_heads * n_layers * args.prune_percent)
+        if args.prune_number is not None:
+            n_to_prune = args.prune_number
+        heads_and_score = [
+            ((layer, head), head_importance[layer, head])
+            for layer in range(n_layers)
+            for head in range(n_heads)
+        ]
+        heads_and_score = sorted(heads_and_score, key=lambda x: x[1])
+        sorted_heads = [head_and_score[0]
+                        for head_and_score in heads_and_score]
+        heads_to_prune = sorted_heads[:n_to_prune]
+
+        if args.eval_pruned:
+            layer_head_to_prune = {}
+            for layer, head in heads_to_prune:
+                if layer not in layer_head_to_prune:
+                    layer_head_to_prune[layer] = []
+                layer_head_to_prune[layer].append(f"{head}")
+            args.attention_mask_heads = [
+                f"{layer}:{','.join(heads)}"
+                for layer, heads in layer_head_to_prune.items()
+            ]
+            print("Will evaluate the following pruning:")
+            print(" ".join(args.attention_mask_heads))
+
     # ==== EVALUATE ====
     if args.do_eval and is_main:
         # Prepare data
