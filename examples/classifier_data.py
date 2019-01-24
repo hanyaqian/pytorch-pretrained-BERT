@@ -3,6 +3,8 @@ import csv
 import os
 
 from logger import logger
+import torch
+from torch.utils.data import TensorDataset
 
 
 class InputExample(object):
@@ -280,6 +282,27 @@ def _truncate_seq_pair(tokens_a, tokens_b, max_length):
             tokens_a.pop()
         else:
             tokens_b.pop()
+
+
+def prepare_tensor_dataset(
+    examples,
+    label_list,
+    max_seq_length,
+    tokenizer
+):
+    features = convert_examples_to_features(
+        examples, label_list, max_seq_length, tokenizer)
+    all_input_ids = torch.tensor(
+        [f.input_ids for f in features], dtype=torch.long)
+    all_input_mask = torch.tensor(
+        [f.input_mask for f in features], dtype=torch.long)
+    all_segment_ids = torch.tensor(
+        [f.segment_ids for f in features], dtype=torch.long)
+    all_label_ids = torch.tensor(
+        [f.label_id for f in features], dtype=torch.long)
+    tensor_data = TensorDataset(
+        all_input_ids, all_input_mask, all_segment_ids, all_label_ids)
+    return tensor_data
 
 
 processors = {
