@@ -342,7 +342,7 @@ def main():
             layer_importance = head_importance[layer].cpu().data
             print("\t".join(f"{x:.5f}" for x in layer_importance))
 
-        n_to_prune = int(n_heads * n_layers * args.prune_percent)
+        n_to_prune = int(n_heads * n_layers * args.prune_percent / 100)
         if args.prune_number is not None:
             n_to_prune = args.prune_number
         heads_and_score = [
@@ -367,6 +367,7 @@ def main():
             ]
             print("Will evaluate the following pruning:")
             print(" ".join(args.attention_mask_heads))
+            args.do_eval = True
 
     # ==== EVALUATE ====
     if args.do_eval and is_main:
