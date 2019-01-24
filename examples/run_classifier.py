@@ -271,9 +271,9 @@ def main():
         logger.info("***** Running pruning *****")
         logger.info(f"  Num examples = {len(train_examples)}")
         logger.info(f"  Batch size = {args.train_batch_size}")
-        logger.info(f"  Num steps = {len(n_prune_steps)}")
+        logger.info(f"  Num steps = {n_prune_steps}")
         prune_iterator = tqdm(train_dataloader, desc="Iteration")
-        head_importance = torch.zeros(n_layers, n_heads)
+        head_importance = torch.zeros(n_layers, n_heads).cuda()
         tot_tokens = 0
 
         for step, batch in enumerate(prune_iterator):

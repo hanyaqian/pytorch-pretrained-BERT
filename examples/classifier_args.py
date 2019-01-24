@@ -78,6 +78,7 @@ def get_base_parser():
         default=42,
         help="random seed for initialization"
     )
+    return parser
 
 
 def training_args(parser):
