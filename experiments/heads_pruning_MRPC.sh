@@ -7,14 +7,14 @@ source $here/prepare_task.sh MNLI
 
 echo $base_acc
 echo $part
-echo "Layer \\textbackslash~Head & 1 & 2 & 3 & 4 \\\\"
-for layer in `seq 1 12`
+for percent in `seq 10 10 100`
 do
-    echo -n "$layer"
+    echo -n "$percent	"
+    prune_options="--do_prune --eval_pruned --prune_percent $percent $OPTIONS"
+    acc=$(run_eval "$prune_options" | grep eval_accuracy | rev | cut -d" " -f1 | rev)
     for head in `seq 1 12`
     do
         mask_str="${layer}:${head}"
-        acc=$(run_eval "--attention-mask-heads $mask_str $OPTIONS" | grep eval_accuracy | rev | cut -d" " -f1 | rev)
         printf " & %.5f" $(echo "$acc - $base_acc" | bc )
     done
     echo " \\\\"

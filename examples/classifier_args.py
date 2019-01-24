@@ -149,6 +149,11 @@ def pruning_args(parser):
         help="Normalize importance score by layers for pruning"
     )
     prune_group.add_argument(
+        "--at_least_one_head_per_layer",
+        action='store_true',
+        help="Keep at least one attention head per layer"
+    )
+    prune_group.add_argument(
         "--eval_pruned",
         action='store_true',
         help="Evaluate the network after pruning"

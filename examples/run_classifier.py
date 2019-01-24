@@ -342,7 +342,10 @@ def main():
             layer_importance = head_importance[layer].cpu().data
             print("\t".join(f"{x:.5f}" for x in layer_importance))
 
-        n_to_prune = int(n_heads * n_layers * args.prune_percent / 100)
+        total_heads = n_heads * n_layers
+        if args.at_least_one_head_per_layer:
+            total_heads -= n_heads
+        n_to_prune = int(total_heads * args.prune_percent / 100)
         if args.prune_number is not None:
             n_to_prune = args.prune_number
         heads_and_score = [
@@ -353,6 +356,18 @@ def main():
         heads_and_score = sorted(heads_and_score, key=lambda x: x[1])
         sorted_heads = [head_and_score[0]
                         for head_and_score in heads_and_score]
+
+        if args.at_least_one_head_per_layer:
+            # Remove the top scoring head in each layer
+            has_at_least_one_head = set()
+            filtered_sorted_heads = []
+            for layer, head in reversed(sorted_heads):
+                if layer not in has_at_least_one_head:
+                    has_at_least_one_head.add(layer)
+                else:
+                    filtered_sorted_heads.insert(0, (layer, head))
+            sorted_heads = filtered_sorted_heads
+        # Prune the lowest scoring heads
         heads_to_prune = sorted_heads[:n_to_prune]
 
         if args.eval_pruned:
