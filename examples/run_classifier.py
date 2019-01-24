@@ -604,12 +604,27 @@ def main():
             attn_partition = 1
             attns_to_save = {}
 
-        def entropy(p, dim=None):
+        def entropy(p):
             plogp = p * torch.log(p)
             plogp[p == 0] = 0
-            return plogp.sum(dim=dim)
+            return -plogp.sum(dim=-1)
 
-        attn_entropy = torch.zeros(model.bert.config.num_hidden_layers, model.bert.config.num_attention_heads)
+        def pairwise_kl(p):
+            # p has shape bsz x nheads x L x L and is normalized in the last dim
+            logp = torch.log(p)
+            logp[p == 0] = 0
+            H_pq = -torch.einsum("blij,bljk->blik", [p.permute(0,2,1,3), logp.permute(0,2,3,1)]).permute(0,2,3,1)
+            print(logp.size())
+            print(H_pq.size())
+            H_p = entropy(p).unsqueeze(-2)
+            KL = H_pq - H_p
+            print(KL.size())
+            return KL
+
+        n_layers = model.bert.config.num_hidden_layers
+        n_heads = model.bert.config.num_attention_heads
+        attn_entropy = torch.zeros(n_layers, n_heads).cuda()
+        attn_kl = torch.zeros(n_layers, n_heads, n_heads).cuda()
         entropy_num = 0
 
         for input_ids, input_mask, segment_ids, label_ids in tqdm(eval_dataloader, desc="Evaluating"):
@@ -634,7 +649,8 @@ def main():
 
             # Record attention entropy
             for layer, attn in enumerate(attns):
-                attn_entropy[layer] += (entropy(attn, dim=-1) * input_mask.unsqueeze(1)).sum(-1).sum(0).detach()
+                attn_entropy[layer] += (entropy(attn) * input_mask.unsqueeze(1).float()).sum(-1).sum(0).detach()
+                attn_kl[layer] += (pairwise_kl(attn) * input_mask.unsqueeze(1).unsqueeze(1).float()).sum(-1).sum(0).detach()
                 entropy_num+=input_mask.detach().sum().data
 
 
@@ -657,9 +673,19 @@ def main():
                   'loss': loss}
 
         # Print layer/headwise entropy
-        attn_entropy /= entropy_num
+        print("Head entropy")
+        attn_entropy /= entropy_num.float()
         for layer in range(len(attn_entropy)):
-            print("\t".join(f"{H:.5f}" for H in attn_entropy[layer].data))
+            print("\t".join(f"{H:.5f}" for H in attn_entropy[layer].cpu().data))
+
+        # Print pairwise layer kl
+        print("Pairwise head KL")
+        attn_kl /= entropy_num.float()
+        for layer in range(len(attn_kl)):
+            print("Layer", layer)
+            for head in range(len(attn_kl[layer])):
+                print("\t".join(f"{KL:.5f}" for KL in attn_kl[layer, head].cpu().data))
+
 
         if args.save_attention_probs != "":
             torch.save(attns_to_save, f"{args.save_attention_probs}.{attn_partition}")

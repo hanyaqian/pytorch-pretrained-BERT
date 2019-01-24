@@ -42,7 +42,7 @@ fi
 base_acc=$(run_eval "" | grep eval_accuracy | rev | cut -d" " -f1 | rev)
 echo $base_acc
 echo "Layer \\textbackslash~Head & 1 & 2 & 3 & 4 \\\\"
-for layer in `seq 1 6`
+for layer in `seq 6 12`
 do
     echo -n "$layer"
     for head in `seq 1 12`

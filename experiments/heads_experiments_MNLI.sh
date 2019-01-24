@@ -41,19 +41,17 @@ fi
 
 base_acc=$(run_eval "" | grep eval_accuracy | rev | cut -d" " -f1 | rev)
 echo $base_acc
-for part in "E" "A" "D"
+echo $part
+echo "Layer \\textbackslash~Head & 1 & 2 & 3 & 4 \\\\"
+for layer in `seq 6 12`
 do
-    echo $part
-    echo "Layer \\textbackslash~Head & 1 & 2 & 3 & 4 \\\\"
-    for layer in `seq 1 6`
+    echo -n "$layer"
+    for head in `seq 1 12`
     do
-        echo -n "$layer"
-        for head in `seq 1 12`
-        do
-            mask_str="${layer}:${head}"
-            acc=$(run_eval $mask_str "$OPTIONS" | grep eval_accuracy | rev | cut -d" " -f1 | rev)
-            printf " & %.5f" $(echo "$acc - $base_acc" | bc )
-        done
-        echo " \\\\"
+        mask_str="${layer}:${head}"
+        acc=$(run_eval $mask_str "$OPTIONS" | grep eval_accuracy | rev | cut -d" " -f1 | rev)
+        printf " & %.5f" $(echo "$acc - $base_acc" | bc )
     done
+    echo " \\\\"
 done
+
