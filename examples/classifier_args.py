@@ -132,14 +132,23 @@ def training_args(parser):
 def pruning_args(parser):
     prune_group = parser.add_argument_group("Pruning")
     prune_group.add_argument(
-        "--prune_percent",
-        default=50,
+        "--compute_head_importance_on_subset",
+        default=1.0,
         type=float,
+        help="Percentage of the training data to use for estimating "
+        "head importance."
+    )
+    prune_group.add_argument(
+        "--prune_percent",
+        default=[50],
+        type=float,
+        nargs="*",
         help="Percentage of heads to prune."
     )
     prune_group.add_argument(
         "--prune_number",
         default=None,
+        nargs="*",
         type=int,
         help="Number of heads to prune. Overrides `--prune_percent`"
     )

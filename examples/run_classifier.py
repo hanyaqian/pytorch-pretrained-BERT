@@ -37,6 +37,178 @@ from pytorch_pretrained_bert.file_utils import PYTORCH_PRETRAINED_BERT_CACHE
 import classifier_args
 import classifier_data as data
 from logger import logger
+from util import head_entropy, head_pairwise_kl, parse_head_pruning_descriptors
+
+
+def evaluate(
+    eval_data,
+    model,
+    eval_batch_size,
+    save_attention_probs=False,
+    print_head_entropy=False,
+    device=None,
+    result=None,
+    verbose=True,
+):
+    eval_sampler = SequentialSampler(eval_data)
+    eval_dataloader = DataLoader(
+        eval_data, sampler=eval_sampler, batch_size=eval_batch_size)
+
+    if verbose:
+        logger.info("***** Running evaluation *****")
+        logger.info(f"  Num examples = {len(eval_data)}")
+        logger.info(f"  Batch size = {eval_batch_size}")
+
+    model.eval()
+    device = device or model.device
+
+    # Run prediction for full data
+    eval_loss, eval_accuracy = 0, 0
+    nb_eval_steps, nb_eval_examples = 0, 0
+    if save_attention_probs != "":
+        example_idx = 0
+        attn_partition = 1
+        attns_to_save = []
+
+    # Save entropy maybe
+    if print_head_entropy:
+        n_layers = model.bert.config.num_hidden_layers
+        n_heads = model.bert.config.num_attention_heads
+        attn_entropy = torch.zeros(n_layers, n_heads).to(device)
+        attn_kl = torch.zeros(n_layers, n_heads, n_heads).to(device)
+
+    tot_tokens = 0
+
+    eval_iterator = tqdm(
+        eval_dataloader, desc="Evaluating", disable=not verbose)
+    for input_ids, input_mask, segment_ids, label_ids in eval_iterator:
+        input_ids = input_ids.to(device)
+        input_mask = input_mask.to(device)
+        segment_ids = segment_ids.to(device)
+        label_ids = label_ids.to(device)
+
+        with torch.no_grad():
+            tmp_eval_loss = model(
+                input_ids, segment_ids, input_mask, label_ids)
+            logits, attns = model(
+                input_ids, segment_ids, input_mask, return_att=True)
+
+        logits = logits.detach().cpu().numpy()
+        label_ids = label_ids.to('cpu').numpy()
+        tmp_eval_accuracy = accuracy(logits, label_ids)
+
+        eval_loss += tmp_eval_loss.mean().item()
+        eval_accuracy += tmp_eval_accuracy
+
+        nb_eval_examples += input_ids.size(0)
+        nb_eval_steps += 1
+
+        # Record attention entropy
+        for layer, attn in enumerate(attns):
+            mask = input_mask.float()
+            # Entropy
+            masked_entropy = head_entropy(attn) * mask.unsqueeze(1)
+            attn_entropy[layer] += masked_entropy.sum(-1).sum(0).detach()
+            # KL
+            masked_kl = head_pairwise_kl(attn) * mask.unsqueeze(1).unsqueeze(1)
+            attn_kl[layer] += masked_kl.sum(-1).sum(0).detach()
+            # Number of tokens
+            tot_tokens += mask.detach().sum().data
+
+        if save_attention_probs != "":
+            attns = [attn.detach().cpu() for attn in attns]
+            for batch_idx in range(input_ids.size(0)):
+                attns_to_save.append([attn[batch_idx] for attn in attns])
+                example_idx += 1
+                if (example_idx + 1) % 100 == 0:
+                    file = f"{save_attention_probs}.{attn_partition}"
+                    torch.save(attns_to_save, file)
+                    attns_to_save = []
+                    attn_partition += 1
+
+    eval_loss = eval_loss / nb_eval_steps
+    eval_accuracy = eval_accuracy / nb_eval_examples
+    result = result or {}
+    result["eval_loss"] = eval_loss
+    result["eval_accuracy"] = eval_accuracy
+
+    if print_head_entropy and verbose:
+        # Print layer/headwise entropy
+        print("Head entropy")
+        attn_entropy /= tot_tokens.float()
+        for layer in range(len(attn_entropy)):
+            print(
+                "\t".join(f"{H:.5f}" for H in attn_entropy[layer].cpu().data))
+
+        # Print pairwise layer kl
+        print("Pairwise head KL")
+        attn_kl /= tot_tokens.float()
+        for layer in range(len(attn_kl)):
+            print("Layer", layer)
+            for head in range(len(attn_kl[layer])):
+                head_kl = attn_kl[layer, head].cpu().data
+                print("\t".join(f"{kl:.5f}" for kl in head_kl))
+
+    if save_attention_probs != "":
+        torch.save(attns_to_save,
+                   f"{save_attention_probs}.{attn_partition}")
+
+    return result
+
+
+def calculate_head_importance(
+        model,
+        data,
+        batch_size,
+        device,
+        normalize_scores_by_layer=True,
+        verbose=True,
+):
+    # Disable dropout
+    model.eval()
+    n_prune_steps = len(data) // batch_size
+    if verbose:
+        logger.info("***** Calculating head importance *****")
+        logger.info(f"  Num examples = {len(data)}")
+        logger.info(f"  Batch size = {batch_size}")
+        logger.info(f"  Num steps = {n_prune_steps}")
+
+    # Prepare data loader
+    sampler = RandomSampler(data)
+    dataloader = DataLoader(
+        data,
+        sampler=sampler,
+        batch_size=batch_size
+    )
+    prune_iterator = tqdm(dataloader, desc="Iteration", disable=not verbose)
+    # Head importance tensor
+    n_layers = model.bert.config.num_hidden_layers
+    n_heads = model.bert.config.num_attention_heads
+    head_importance = torch.zeros(n_layers, n_heads).to(device)
+    tot_tokens = 0
+
+    for step, batch in enumerate(prune_iterator):
+        batch = tuple(t.to(device) for t in batch)
+        input_ids, input_mask, segment_ids, label_ids = batch
+        loss = model(input_ids, segment_ids, input_mask, label_ids).sum()
+        loss.backward()
+
+        for layer in range(model.bert.config.num_hidden_layers):
+            self_att = model.bert.encoder.layer[layer].attention.self
+            ctx = self_att.context_layer_val
+            grad_ctx = ctx.grad
+            # Take the dot
+            dot = torch.einsum("bhli,bhlj->bhl", [grad_ctx, ctx])
+            head_importance[layer] += dot.abs().sum(-1).sum(0).detach()
+
+        tot_tokens += input_mask.float().detach().sum().data
+    head_importance /= tot_tokens
+    # Layerwise importance normalization
+    if normalize_scores_by_layer:
+        norm_by_layer = (head_importance ** 2).sum(-1).sqrt()
+        head_importance /= norm_by_layer.unsqueeze(-1) + 1e-20
+
+    return head_importance
 
 
 def accuracy(out, labels):
@@ -276,10 +448,13 @@ def main():
                     optimizer.step()
                     optimizer.zero_grad()
                     global_step += 1
+    # Save train loss
+    result = {"global_step": global_step,
+              "loss": tr_loss/nb_tr_steps if args.do_train else None}
 
     # Save a trained model
     model_to_save = model.module if hasattr(
-        model, 'module') else model  # Only save the model it-self
+        model, "module") else model  # Only save the model it-self
     output_model_file = os.path.join(args.output_dir, "pytorch_model.bin")
     if args.do_train:
         torch.save(model_to_save.state_dict(), output_model_file)
@@ -294,99 +469,8 @@ def main():
         )
         model.to(device)
 
-    n_layers = model.bert.config.num_hidden_layers
-    n_heads = model.bert.config.num_attention_heads
-    is_main = args.local_rank == -1 or torch.distributed.get_rank() == 0
-
-    # ==== PRUNE ====
-    if args.do_prune and is_main:
-        # Disable dropout
-        model.eval()
-        n_prune_steps = len(train_examples) // args.train_batch_size
-        logger.info("***** Running pruning *****")
-        logger.info(f"  Num examples = {len(train_examples)}")
-        logger.info(f"  Batch size = {args.train_batch_size}")
-        logger.info(f"  Num steps = {n_prune_steps}")
-        prune_iterator = tqdm(train_dataloader, desc="Iteration")
-        head_importance = torch.zeros(n_layers, n_heads)
-        if n_gpu > 0:
-            head_importance = head_importance.cuda()
-        tot_tokens = 0
-
-        for step, batch in enumerate(prune_iterator):
-            batch = tuple(t.to(device) for t in batch)
-            input_ids, input_mask, segment_ids, label_ids = batch
-            loss = model(input_ids, segment_ids, input_mask, label_ids).sum()
-
-            if args.fp16:
-                optimizer.backward(loss)
-            else:
-                loss.backward()
-
-            for layer in range(model.bert.config.num_hidden_layers):
-                self_att = model.bert.encoder.layer[layer].attention.self
-                ctx = self_att.context_layer_val
-                grad_ctx = ctx.grad
-                # Take the dot
-                dot = torch.einsum("bhli,bhlj->bhl", [grad_ctx, ctx])
-                head_importance[layer] += dot.abs().sum(-1).sum(0).detach()
-
-            tot_tokens += input_mask.float().detach().sum().data
-        head_importance /= tot_tokens
-        # Layerwise importance normalization
-        if args.normalize_pruning_by_layer:
-            norm_by_layer = (head_importance ** 2).sum(-1).sqrt()
-            head_importance /= norm_by_layer.unsqueeze(-1) + 1e-20
-        print("Head importance scores")
-        for layer in range(n_layers):
-            layer_importance = head_importance[layer].cpu().data
-            print("\t".join(f"{x:.5f}" for x in layer_importance))
-
-        total_heads = n_heads * n_layers
-        if args.at_least_one_head_per_layer:
-            total_heads -= n_heads
-        n_to_prune = int(total_heads * args.prune_percent / 100)
-        if args.prune_number is not None:
-            n_to_prune = args.prune_number
-        heads_and_score = [
-            ((layer, head), head_importance[layer, head])
-            for layer in range(n_layers)
-            for head in range(n_heads)
-        ]
-        heads_and_score = sorted(heads_and_score, key=lambda x: x[1])
-        sorted_heads = [head_and_score[0]
-                        for head_and_score in heads_and_score]
-
-        if args.at_least_one_head_per_layer:
-            # Remove the top scoring head in each layer
-            has_at_least_one_head = set()
-            filtered_sorted_heads = []
-            for layer, head in reversed(sorted_heads):
-                if layer not in has_at_least_one_head:
-                    has_at_least_one_head.add(layer)
-                else:
-                    filtered_sorted_heads.insert(0, (layer, head))
-            sorted_heads = filtered_sorted_heads
-        # Prune the lowest scoring heads
-        heads_to_prune = sorted_heads[:n_to_prune]
-
-        if args.eval_pruned:
-            layer_head_to_prune = {}
-            for layer, head in heads_to_prune:
-                if layer not in layer_head_to_prune:
-                    layer_head_to_prune[layer] = []
-                layer_head_to_prune[layer].append(f"{head}")
-            args.attention_mask_heads = [
-                f"{layer}:{','.join(heads)}"
-                for layer, heads in layer_head_to_prune.items()
-            ]
-            print("Will evaluate the following pruning:")
-            print(" ".join(args.attention_mask_heads))
-            args.do_eval = True
-
-    # ==== EVALUATE ====
-    if args.do_eval and is_main:
-        # Prepare data
+    # Prepare data
+    if args.do_eval or (args.do_prune and args.eval_pruned):
         if args.dry_run:
             eval_examples = processor.get_dummy_dev_examples(args.data_dir)
         else:
@@ -397,138 +481,125 @@ def main():
             args.max_seq_length,
             tokenizer
         )
-        eval_sampler = SequentialSampler(eval_data)
-        eval_dataloader = DataLoader(
-            eval_data, sampler=eval_sampler, batch_size=args.eval_batch_size)
 
-        logger.info("***** Running evaluation *****")
-        logger.info(f"  Num examples = {len(eval_examples)}")
-        logger.info(f"  Batch size = {args.eval_batch_size}")
+    is_main = args.local_rank == -1 or torch.distributed.get_rank() == 0
 
-        model.eval()
-        # Prune heads
-        for descriptor in args.attention_mask_heads:
-            layer, heads = descriptor.split(":")
-            layer = int(layer) - 1
-            heads = [int(head) - 1 for head in heads.split(",")]
-            self_att = model.bert.encoder.layer[layer].attention.self
-            if args.reverse_head_mask:
-                excluded_heads = set(heads)
-                heads = [head for head in range(self_att.num_attention_heads)
-                         if head not in excluded_heads]
-            self_att.mask_heads = heads
-            self_att._head_mask = None
+    # Parse pruning descriptor
+    to_prune = parse_head_pruning_descriptors(
+        args.attention_mask_heads,
+        reverse_descriptors=args.reverse_head_mask,
+    )
+    # Mask heads
+    model.bert.mask_heads(to_prune)
 
-        # Run prediction for full data
-        eval_loss, eval_accuracy = 0, 0
-        nb_eval_steps, nb_eval_examples = 0, 0
-        if args.save_attention_probs != "":
-            example_idx = 0
-            attn_partition = 1
-            attns_to_save = {}
+    # ==== PRUNE ====
+    if args.do_prune and is_main:
+        if args.fp16:
+            raise NotImplementedError("FP16 is not yet supported for pruning")
+        # Calculate importance scores for each layer
+        head_importance = calculate_head_importance(
+            model,
+            train_data,
+            batch_size=args.train_batch_size,
+            device=device,
+            normalize_scores_by_layer=args.normalize_pruning_by_layer,
+        )
 
-        def entropy(p):
-            plogp = p * torch.log(p)
-            plogp[p == 0] = 0
-            return -plogp.sum(dim=-1)
+        print("Head importance scores")
+        for layer in range(len(head_importance)):
+            layer_importance = head_importance[layer].cpu().data
+            print("\t".join(f"{x:.5f}" for x in layer_importance))
 
-        def pairwise_kl(p):
-            # p has shape bsz x nheads x L x L and is normalized in the last
-            # dim
-            logp = torch.log(p)
-            logp[p == 0] = 0
-            H_pq = -torch.einsum(
-                "blij,bljk->blik",
-                [p.permute(0, 2, 1, 3), logp.permute(0, 2, 3, 1)]
-            ).permute(0, 2, 3, 1)
-            H_p = entropy(p).unsqueeze(-2)
-            KL = H_pq - H_p
-            return KL
+        n_layers = model.bert.config.num_hidden_layers
+        n_heads = model.bert.config.num_attention_heads
 
-        attn_entropy = torch.zeros(n_layers, n_heads)
-        attn_kl = torch.zeros(n_layers, n_heads, n_heads)
+        all_n_to_prune = args.prune_number
+        if all_n_to_prune is None:
+            # Compute the number of heads to prune on percentage if needed
+            all_n_to_prune = []
+            for prune_percent in args.prune_percent:
+                total_heads = n_heads * n_layers
+                n_to_prune = int(total_heads * prune_percent / 100)
+                # Make sure we keep at least one head per layer
+                if args.at_least_one_head_per_layer:
+                    if n_to_prune > total_heads - n_layers:
+                        logger.warn(
+                            f"Can't prune {prune_percent}% ({n_to_prune})"
+                            " heads AND keep at least 1 head per layer. Will"
+                            f" prune only {(1-n_layers/total_heads*100):.1f} "
+                            f"({total_heads-n_layers}) heads instead"
+                        )
+                        n_to_prune = total_heads - n_layers
+                all_n_to_prune.append(n_to_prune)
 
-        if n_gpu > 0:
-            attn_entropy = attn_entropy.cuda()
-            attn_kl = attn_kl.cuda()
+        # We'll incrementally prune layers and evaluate
+        all_n_to_prune = sorted(all_n_to_prune)
+        cumsum = 0
+        n_to_prune_sequence = all_n_to_prune[:]
+        for idx in range(len(all_n_to_prune)):
+            n_to_prune_sequence[idx] = all_n_to_prune[idx] - cumsum
+            cumsum += all_n_to_prune[idx]
+        # Verify that the total number of heads pruned stayed the same
+        assert all_n_to_prune[-1] == sum(n_to_prune_sequence)
 
-        tot_tokens = 0
+        # Sort heads by score
+        heads_and_score = [
+            ((layer, head), head_importance[layer, head])
+            for layer in range(n_layers)
+            for head in range(n_heads)
+        ]
+        heads_and_score = sorted(heads_and_score, key=lambda x: x[1])
+        sorted_heads = [head_and_score[0]
+                        for head_and_score in heads_and_score]
+        # Ensure we don't delete all heads in a layer
+        if args.at_least_one_head_per_layer:
+            # Remove the top scoring head in each layer
+            has_at_least_one_head = set()
+            filtered_sorted_heads = []
+            for layer, head in reversed(sorted_heads):
+                if layer not in has_at_least_one_head:
+                    has_at_least_one_head.add(layer)
+                else:
+                    filtered_sorted_heads.insert(0, (layer, head))
+            sorted_heads = filtered_sorted_heads
 
-        eval_iterator = tqdm(eval_dataloader, desc="Evaluating")
-        for input_ids, input_mask, segment_ids, label_ids in eval_iterator:
-            input_ids = input_ids.to(device)
-            input_mask = input_mask.to(device)
-            segment_ids = segment_ids.to(device)
-            label_ids = label_ids.to(device)
+        for n_to_prune in all_n_to_prune:
+            # Prune the lowest scoring heads
+            heads_to_prune = sorted_heads[:n_to_prune]
+            # Update heads to prune
+            for layer, head in heads_to_prune:
+                if layer not in to_prune:
+                    to_prune[layer] = set()
+                to_prune[layer].add(head)
+            # Print the pruning descriptor
+            descriptors = [f"{layer}:{','.join(str(head) for head in heads)}"
+                           for layer, heads in to_prune.items()]
+            print("Evaluating following pruning strategy")
+            print(" ".join(descriptors))
+            # Evaluate
+            if args.eval_pruned:
+                accuracy = evaluate(
+                    eval_data,
+                    model,
+                    args.eval_batch_size,
+                    save_attention_probs=args.save_attention_probs,
+                    print_head_entropy=True,
+                    device=device,
+                    verbose=False,
+                )["eval_accuracy"]
+                print(f"{n_to_prune}\t{accuracy}")
 
-            with torch.no_grad():
-                tmp_eval_loss = model(
-                    input_ids, segment_ids, input_mask, label_ids)
-                logits, attns = model(
-                    input_ids, segment_ids, input_mask, return_att=True)
-
-            logits = logits.detach().cpu().numpy()
-            label_ids = label_ids.to('cpu').numpy()
-            tmp_eval_accuracy = accuracy(logits, label_ids)
-
-            eval_loss += tmp_eval_loss.mean().item()
-            eval_accuracy += tmp_eval_accuracy
-
-            nb_eval_examples += input_ids.size(0)
-            nb_eval_steps += 1
-
-            # Record attention entropy
-            for layer, attn in enumerate(attns):
-                mask = input_mask.float()
-                # Entropy
-                masked_entropy = entropy(attn) * mask.unsqueeze(1)
-                attn_entropy[layer] += masked_entropy.sum(-1).sum(0).detach()
-                # KL
-                masked_kl = pairwise_kl(attn) * mask.unsqueeze(1).unsqueeze(1)
-                attn_kl[layer] += masked_kl.sum(-1).sum(0).detach()
-                # Number of tokens
-                tot_tokens += mask.detach().sum().data
-
-            if args.save_attention_probs != "":
-                attns = [attn.detach().cpu() for attn in attns]
-                for batch_idx in range(input_ids.size(0)):
-                    attns_to_save[eval_examples[example_idx]] = [
-                        attn[batch_idx] for attn in attns]
-                    example_idx += 1
-                    if (example_idx + 1) % 100 == 0:
-                        file = f"{args.save_attention_probs}.{attn_partition}"
-                        torch.save(attns_to_save, file)
-                        attns_to_save = {}
-                        attn_partition += 1
-
-        eval_loss = eval_loss / nb_eval_steps
-        eval_accuracy = eval_accuracy / nb_eval_examples
-        loss = tr_loss/nb_tr_steps if args.do_train else None
-        result = {'eval_loss': eval_loss,
-                  'eval_accuracy': eval_accuracy,
-                  'global_step': global_step,
-                  'loss': loss}
-
-        # Print layer/headwise entropy
-        print("Head entropy")
-        attn_entropy /= tot_tokens.float()
-        for layer in range(len(attn_entropy)):
-            print(
-                "\t".join(f"{H:.5f}" for H in attn_entropy[layer].cpu().data))
-
-        # Print pairwise layer kl
-        print("Pairwise head KL")
-        attn_kl /= tot_tokens.float()
-        for layer in range(len(attn_kl)):
-            print("Layer", layer)
-            for head in range(len(attn_kl[layer])):
-                head_kl = attn_kl[layer, head].cpu().data
-                print("\t".join(f"{kl:.5f}" for kl in head_kl))
-
-        if args.save_attention_probs != "":
-            torch.save(attns_to_save,
-                       f"{args.save_attention_probs}.{attn_partition}")
-
+    # ==== EVALUATE ====
+    if args.do_eval and is_main:
+        evaluate(
+            eval_data,
+            model,
+            args.eval_batch_size,
+            save_attention_probs=args.save_attention_probs,
+            print_head_entropy=True,
+            device=device,
+            result=result
+        )
         output_eval_file = os.path.join(args.output_dir, "eval_results.txt")
         with open(output_eval_file, "w") as writer:
             logger.info("***** Eval results *****")
