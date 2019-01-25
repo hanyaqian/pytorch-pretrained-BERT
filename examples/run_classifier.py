@@ -20,6 +20,7 @@ import os
 import random
 from tqdm import tqdm, trange
 import tempfile
+from itertools import islice
 
 import numpy as np
 import torch
@@ -37,7 +38,8 @@ from pytorch_pretrained_bert.file_utils import PYTORCH_PRETRAINED_BERT_CACHE
 import classifier_args
 import classifier_data as data
 from logger import logger
-from util import head_entropy, head_pairwise_kl, parse_head_pruning_descriptors
+from util import head_entropy, head_pairwise_kl
+import pruning
 
 
 def evaluate(
@@ -163,10 +165,15 @@ def calculate_head_importance(
         device,
         normalize_scores_by_layer=True,
         verbose=True,
+        subset_size=1.0,
 ):
     # Disable dropout
     model.eval()
-    n_prune_steps = len(data) // batch_size
+    n_prune_steps = int(np.ceil(
+        len(data)
+        / batch_size
+        * subset_size
+    ))
     if verbose:
         logger.info("***** Calculating head importance *****")
         logger.info(f"  Num examples = {len(data)}")
@@ -175,12 +182,13 @@ def calculate_head_importance(
 
     # Prepare data loader
     sampler = RandomSampler(data)
-    dataloader = DataLoader(
+    dataloader = islice(DataLoader(
         data,
         sampler=sampler,
         batch_size=batch_size
-    )
-    prune_iterator = tqdm(dataloader, desc="Iteration", disable=not verbose)
+    ), n_prune_steps)
+    prune_iterator = tqdm(dataloader, desc="Iteration",
+                          disable=not verbose, total=n_prune_steps)
     # Head importance tensor
     n_layers = model.bert.config.num_hidden_layers
     n_heads = model.bert.config.num_attention_heads
@@ -190,6 +198,7 @@ def calculate_head_importance(
     for step, batch in enumerate(prune_iterator):
         batch = tuple(t.to(device) for t in batch)
         input_ids, input_mask, segment_ids, label_ids = batch
+        # Compute gradients
         loss = model(input_ids, segment_ids, input_mask, label_ids).sum()
         loss.backward()
 
@@ -318,7 +327,8 @@ def main():
             train_examples,
             label_list,
             args.max_seq_length,
-            tokenizer
+            tokenizer,
+            verbose=args.verbose,
         )
         # Prepare data loader
         if args.local_rank == -1:
@@ -335,8 +345,7 @@ def main():
             len(train_examples)
             / args.train_batch_size
             / args.gradient_accumulation_steps
-            * args.num_train_epochs
-        )
+        ) * args.num_train_epochs
 
     # Prepare model
 
@@ -448,6 +457,7 @@ def main():
                     optimizer.step()
                     optimizer.zero_grad()
                     global_step += 1
+        print()
     # Save train loss
     result = {"global_step": global_step,
               "loss": tr_loss/nb_tr_steps if args.do_train else None}
@@ -479,13 +489,14 @@ def main():
             eval_examples,
             label_list,
             args.max_seq_length,
-            tokenizer
+            tokenizer,
+            verbose=args.verbose,
         )
 
     is_main = args.local_rank == -1 or torch.distributed.get_rank() == 0
 
     # Parse pruning descriptor
-    to_prune = parse_head_pruning_descriptors(
+    to_prune = pruning.parse_head_pruning_descriptors(
         args.attention_mask_heads,
         reverse_descriptors=args.reverse_head_mask,
     )
@@ -496,88 +507,49 @@ def main():
     if args.do_prune and is_main:
         if args.fp16:
             raise NotImplementedError("FP16 is not yet supported for pruning")
-        # Calculate importance scores for each layer
-        head_importance = calculate_head_importance(
-            model,
-            train_data,
-            batch_size=args.train_batch_size,
-            device=device,
-            normalize_scores_by_layer=args.normalize_pruning_by_layer,
+
+        # Determine the number of heads to prune
+        prune_sequence = pruning.determine_pruning_sequence(
+            args.prune_number,
+            args.prune_percent,
+            model.bert.config.num_hidden_layers,
+            model.bert.config.num_attention_heads,
+            args.at_least_one_head_per_layer,
         )
 
-        print("Head importance scores")
-        for layer in range(len(head_importance)):
-            layer_importance = head_importance[layer].cpu().data
-            print("\t".join(f"{x:.5f}" for x in layer_importance))
+        # TODO: refqctor
+        for step, n_to_prune in enumerate(prune_sequence):
 
-        n_layers = model.bert.config.num_hidden_layers
-        n_heads = model.bert.config.num_attention_heads
+            if step == 0 or args.exact_pruning:
+                # Calculate importance scores for each layer
+                head_importance = calculate_head_importance(
+                    model,
+                    train_data,
+                    batch_size=args.train_batch_size,
+                    device=device,
+                    normalize_scores_by_layer=args.normalize_pruning_by_layer,
+                    subset_size=args.compute_head_importance_on_subset,
+                )
 
-        all_n_to_prune = args.prune_number
-        if all_n_to_prune is None:
-            # Compute the number of heads to prune on percentage if needed
-            all_n_to_prune = []
-            for prune_percent in args.prune_percent:
-                total_heads = n_heads * n_layers
-                n_to_prune = int(total_heads * prune_percent / 100)
-                # Make sure we keep at least one head per layer
-                if args.at_least_one_head_per_layer:
-                    if n_to_prune > total_heads - n_layers:
-                        logger.warn(
-                            f"Can't prune {prune_percent}% ({n_to_prune})"
-                            " heads AND keep at least 1 head per layer. Will"
-                            f" prune only {(1-n_layers/total_heads*100):.1f} "
-                            f"({total_heads-n_layers}) heads instead"
-                        )
-                        n_to_prune = total_heads - n_layers
-                all_n_to_prune.append(n_to_prune)
-
-        # We'll incrementally prune layers and evaluate
-        all_n_to_prune = sorted(all_n_to_prune)
-        cumsum = 0
-        n_to_prune_sequence = all_n_to_prune[:]
-        for idx in range(len(all_n_to_prune)):
-            n_to_prune_sequence[idx] = all_n_to_prune[idx] - cumsum
-            cumsum += all_n_to_prune[idx]
-        # Verify that the total number of heads pruned stayed the same
-        assert all_n_to_prune[-1] == sum(n_to_prune_sequence)
-
-        # Sort heads by score
-        heads_and_score = [
-            ((layer, head), head_importance[layer, head])
-            for layer in range(n_layers)
-            for head in range(n_heads)
-        ]
-        heads_and_score = sorted(heads_and_score, key=lambda x: x[1])
-        sorted_heads = [head_and_score[0]
-                        for head_and_score in heads_and_score]
-        # Ensure we don't delete all heads in a layer
-        if args.at_least_one_head_per_layer:
-            # Remove the top scoring head in each layer
-            has_at_least_one_head = set()
-            filtered_sorted_heads = []
-            for layer, head in reversed(sorted_heads):
-                if layer not in has_at_least_one_head:
-                    has_at_least_one_head.add(layer)
-                else:
-                    filtered_sorted_heads.insert(0, (layer, head))
-            sorted_heads = filtered_sorted_heads
-
-        for n_to_prune in all_n_to_prune:
-            # Prune the lowest scoring heads
-            heads_to_prune = sorted_heads[:n_to_prune]
-            # Update heads to prune
-            for layer, head in heads_to_prune:
-                if layer not in to_prune:
-                    to_prune[layer] = set()
-                to_prune[layer].add(head)
-            # Print the pruning descriptor
-            descriptors = [f"{layer}:{','.join(str(head) for head in heads)}"
-                           for layer, heads in to_prune.items()]
-            print("Evaluating following pruning strategy")
-            print(" ".join(descriptors))
+                print("Head importance scores")
+                for layer in range(len(head_importance)):
+                    layer_importance = head_importance[layer].cpu().data
+                    print("\t".join(f"{x:.5f}" for x in layer_importance))
+            # Determine which heads to prune
+            to_prune = pruning.what_to_prune(
+                head_importance,
+                n_to_prune,
+                to_prune=to_prune,
+                at_least_one_head_per_layer=args.at_least_one_head_per_layer
+            )
+            # Actually mask the heads
+            model.bert.mask_heads(to_prune)
             # Evaluate
             if args.eval_pruned:
+                # Print the pruning descriptor
+                print("Evaluating following pruning strategy")
+                print(" ".join(pruning.to_pruning_descriptor(to_prune)))
+                # Eval accuracy
                 accuracy = evaluate(
                     eval_data,
                     model,

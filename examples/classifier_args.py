@@ -83,6 +83,11 @@ def get_base_parser():
         default=42,
         help="random seed for initialization"
     )
+    parser.add_argument(
+        "--verbose",
+        action='store_true',
+        help="Print data examples"
+    )
     return parser
 
 
@@ -161,6 +166,11 @@ def pruning_args(parser):
         "--at_least_one_head_per_layer",
         action='store_true',
         help="Keep at least one attention head per layer"
+    )
+    prune_group.add_argument(
+        "--exact_pruning",
+        action='store_true',
+        help="Reevaluate head importance score before each pruning step."
     )
     prune_group.add_argument(
         "--eval_pruned",

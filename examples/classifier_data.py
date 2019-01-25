@@ -187,7 +187,8 @@ def convert_examples_to_features(
     examples,
     label_list,
     max_seq_length,
-    tokenizer
+    tokenizer,
+    verbose=True,
 ):
     """Loads a data file into a list of `InputBatch`s."""
 
@@ -253,7 +254,7 @@ def convert_examples_to_features(
         assert len(segment_ids) == max_seq_length
 
         label_id = label_map[example.label]
-        if ex_index < 5:
+        if ex_index < 5 and verbose:
             logger.info("*** Example ***")
             logger.info("guid: %s" % (example.guid))
             logger.info("tokens: %s" % " ".join(
@@ -296,10 +297,11 @@ def prepare_tensor_dataset(
     examples,
     label_list,
     max_seq_length,
-    tokenizer
+    tokenizer,
+    verbose=True,
 ):
     features = convert_examples_to_features(
-        examples, label_list, max_seq_length, tokenizer)
+        examples, label_list, max_seq_length, tokenizer, verbose)
     all_input_ids = torch.tensor(
         [f.input_ids for f in features], dtype=torch.long)
     all_input_mask = torch.tensor(

@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 
 TASK=$1
+TRAIN_OPTIONS="${@:2}"
 
 mkdir -p models
 model_dir=models/$TASK
 mkdir -p $model_dir
 
 function run_train () {
-    python examples/run_classifier.py \
+    python examples/run_classifier.py $TRAIN_OPTIONS \
     --task_name $TASK \
     --do_train \
     --do_lower_case \

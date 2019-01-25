@@ -19,28 +19,3 @@ def head_pairwise_kl(p):
     H_p = head_entropy(p).unsqueeze(-2)
     KL = H_pq - H_p
     return KL
-
-
-def parse_head_pruning_descriptors(
-    descriptors,
-    reverse_descriptors=False,
-    n_heads=None
-):
-    """Returns a dictionary mapping layers to the set of heads to prune in
-    this layer"""
-    to_prune = {}
-    for descriptor in descriptors:
-        layer, heads = descriptor.split(":")
-        layer = int(layer) - 1
-        heads = set(int(head) - 1 for head in heads.split(","))
-        if layer not in to_prune:
-            to_prune[layer] = set()
-        to_prune[layer].update(heads)
-    # Reverse
-    if reverse_descriptors:
-        if n_heads is None:
-            raise ValueError("You need to specify the total number of heads")
-        for layer, heads in to_prune.items():
-            to_prune[layer] = set([head for head in range(n_heads)
-                                   if head not in heads])
-    return to_prune
