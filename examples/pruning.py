@@ -53,7 +53,7 @@ def determine_pruning_sequence(
                     logger.warn(
                         f"Can't prune {prune_percent}% ({n_to_prune})"
                         " heads AND keep at least 1 head per layer. Will"
-                        f" prune only {(1-n_layers/total_heads*100):.1f} "
+                        f" prune only {(1-n_layers/total_heads)*100:.1f} "
                         f"({total_heads-n_layers}) heads instead"
                     )
                     n_to_prune = total_heads - n_layers
@@ -61,11 +61,9 @@ def determine_pruning_sequence(
 
     # We'll incrementally prune layers and evaluate
     all_n_to_prune = sorted(all_n_to_prune)
-    cumsum = 0
     n_to_prune_sequence = all_n_to_prune[:]
-    for idx in range(len(all_n_to_prune)):
-        n_to_prune_sequence[idx] = all_n_to_prune[idx] - cumsum
-        cumsum += all_n_to_prune[idx]
+    for idx in range(1, len(all_n_to_prune)):
+        n_to_prune_sequence[idx] = all_n_to_prune[idx] - all_n_to_prune[idx-1]
     # Verify that the total number of heads pruned stayed the same
     assert all_n_to_prune[-1] == sum(n_to_prune_sequence)
     return n_to_prune_sequence

@@ -529,6 +529,7 @@ def main():
                     device=device,
                     normalize_scores_by_layer=args.normalize_pruning_by_layer,
                     subset_size=args.compute_head_importance_on_subset,
+                    verbose=False,
                 )
 
                 print("Head importance scores")
@@ -548,7 +549,7 @@ def main():
             if args.eval_pruned:
                 # Print the pruning descriptor
                 print("Evaluating following pruning strategy")
-                print(" ".join(pruning.to_pruning_descriptor(to_prune)))
+                print(pruning.to_pruning_descriptor(to_prune))
                 # Eval accuracy
                 accuracy = evaluate(
                     eval_data,
@@ -560,7 +561,8 @@ def main():
                     verbose=False,
                 )["eval_accuracy"]
                 logger.info("***** Pruning eval results *****")
-                print(f"{n_to_prune}\t{accuracy}")
+                tot_pruned = sum(len(heads) for heads in to_prune.values())
+                print(f"{tot_pruned}\t{accuracy}")
 
     # ==== EVALUATE ====
     if args.do_eval and is_main:
