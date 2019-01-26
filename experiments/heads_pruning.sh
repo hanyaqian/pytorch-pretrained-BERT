@@ -8,5 +8,5 @@ source $here/prepare_task.sh $TASK
 
 echo $base_acc
 prune_options="--do_prune --eval_pruned --prune_percent `seq 10 10 100` $OPTIONS"
-acc=$(run_eval "$prune_options" | grep eval_accuracy | rev | cut -d" " -f1 | rev)
+run_eval "$prune_options"
 
