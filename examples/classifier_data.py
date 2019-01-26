@@ -5,6 +5,7 @@ import os
 from logger import logger
 import torch
 from torch.utils.data import TensorDataset
+from dependency_parser import parse_sents
 
 
 class InputExample(object):
@@ -26,6 +27,24 @@ class InputExample(object):
         self.text_a = text_a
         self.text_b = text_b
         self.label = label
+
+        self.parse_a = None
+        self.parse_b = None
+
+
+def add_dependency_arcs(examples):
+    if isinstance(examples, InputExample):
+        examples = [examples]
+    # Do text_a
+    parses_a = parse_sents([example.text_a for example in examples])
+    for example, parse_a in zip(examples, parses_a):
+        example.parse_a = parse_a
+    # Do text_b if needed
+    if examples[0].text_b is not None:
+        parses_b = parse_sents([example.text_b for example in examples])
+        for example, parse_b in zip(examples, parses_b):
+            example.parse_b = parse_b
+    return examples
 
 
 class InputFeatures(object):
