@@ -559,6 +559,7 @@ def main():
                     device=device,
                     verbose=False,
                 )["eval_accuracy"]
+                logger.info("***** Pruning eval results *****")
                 print(f"{n_to_prune}\t{accuracy}")
 
     # ==== EVALUATE ====
