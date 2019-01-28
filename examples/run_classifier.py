@@ -430,18 +430,20 @@ def main():
         )
         predictions = predict(
             anal_data,
-            anal_examples,
             model,
             args.eval_batch_size,
             verbose=True,
+            device=device,
         )
         report = analyze_nli(anal_examples, predictions, label_list)
         # Print report
         for feature, values in report.items():
-            print(f"Scores breakdown for feature {feature}")
+            print("=" * 80)
+            print(f"Scores breakdown for feature: {feature}")
             for value, accuracy in values.items():
                 print(f"{value}\t{accuracy:.5f}")
 
 
 if __name__ == "__main__":
     main()
+

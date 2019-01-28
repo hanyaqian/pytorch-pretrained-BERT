@@ -231,7 +231,7 @@ def predict(
         # Track predictions
         batch_predictions = np.argmax(logits.detach().cpu().numpy(), axis=1)
         for pred in batch_predictions:
-            predictions.append(batch_predictions)
+            predictions.append(pred)
 
     return np.asarray(predictions, dtype=int)
 
@@ -247,17 +247,19 @@ def analyze_nli(anal_examples, predictions, labels_list):
     }
     normalizers = {k: {} for k in report}
     for example, pred in zip(anal_examples, predictions):
-        correct = float(anal_examples.label == labels_list[predictions])
+        correct = float(example.label == labels_list[pred])
         for feature in report:
-            value = getattr(anal_examples, feature)
-            if value is not None:
-                # Record whether the model was correct on this particular
-                # value of the feature
-                if value not in report[feature]:
-                    report[feature][value] = 0
-                    normalizers[feature][value] = 0
-                report[feature][value] += correct
-                normalizers[feature][value] += 1
+            values = getattr(example, feature)
+            if values is not None:
+                # Sometimes there are multiple values
+                for value in values.split(";"):
+                    # Record whether the model was correct on this particular
+                    # value of the feature
+                    if value not in report[feature]:
+                        report[feature][value] = 0
+                        normalizers[feature][value] = 0
+                    report[feature][value] += correct
+                    normalizers[feature][value] += 1
     # Normalize report
     for feature in report:
         Ns = normalizers[feature]
