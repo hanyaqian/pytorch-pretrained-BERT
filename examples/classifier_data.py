@@ -6,6 +6,7 @@ from logger import logger
 import torch
 from torch.utils.data import TensorDataset
 from dependency_parser import parse_sent
+from util import none_if_empty
 
 
 class InputExample(object):
@@ -41,6 +42,28 @@ def add_dependency_arcs(examples, verbose=True):
         if example.text_b is not None:
             example.parse_b = parse_sent(example.text_b)
     return examples
+
+
+class NLIDiagnosticExample(InputExample):
+
+    def __init__(
+        self,
+        guid,
+        text_a,
+        text_b=None,
+        label=None,
+        lex_sem=None,
+        pred_arg_struct=None,
+        logic=None,
+        knowledge=None,
+        domain=None,
+    ):
+        super(NLIDiagnosticExample, self).__init__(guid, text_a, text_b, label)
+        self.lex_sem = lex_sem
+        self.pred_arg_struct = pred_arg_struct
+        self.logic = logic
+        self.knowledge = knowledge
+        self.domain = domain
 
 
 class InputFeatures(object):
@@ -112,7 +135,7 @@ class MrpcProcessor(DataProcessor):
         for (i, line) in enumerate(lines):
             if i == 0:
                 continue
-            guid = "%s-%s" % (set_type, i)
+            guid = f"{set_type}-{i}"
             text_a = line[3]
             text_b = line[4]
             label = line[0]
@@ -151,7 +174,7 @@ class Sst2Processor(DataProcessor):
         for (i, line) in enumerate(lines):
             if i == 0:
                 continue
-            guid = "%s-%s" % (set_type, i)
+            guid = f"{set_type}-{i}"
             text_a = line[0]
             label = line[1]
             example = InputExample(
@@ -223,7 +246,7 @@ class ColaProcessor(DataProcessor):
         """Creates examples for the training and dev sets."""
         examples = []
         for (i, line) in enumerate(lines):
-            guid = "%s-%s" % (set_type, i)
+            guid = f"{set_type}-{i}"
             text_a = line[3]
             label = line[1]
             example = InputExample(
@@ -234,6 +257,49 @@ class ColaProcessor(DataProcessor):
             )
             examples.append(example)
         return examples
+
+
+class DiagnosticProcessor(DataProcessor):
+    """Processor for the GLUE diagnostic dataset."""
+
+    def get_train_examples(self, data_dir):
+        """See base class."""
+        raise ValueError("You can't train on the diagnostic data naughty boy")
+
+    def get_dev_examples(self, data_dir):
+        """See base class."""
+        print(data_dir)
+        return self._create_examples(
+            self._read_tsv(os.path.join(data_dir, "diagnostic-full.tsv")),
+            "diagnostic")
+
+    def get_labels(self):
+        """See base class."""
+        return ["contradiction", "entailment", "neutral"]
+
+    def _create_examples(self, lines, set_type):
+        """Creates examples for the training and dev sets."""
+        examples = []
+        for (i, line) in enumerate(lines):
+            if i == 0:
+                continue
+            example = NLIDiagnosticExample(
+                guid=f"{set_type}-{i}",
+                text_a=line[5],
+                text_b=line[6],
+                label=line[7],
+                lex_sem=none_if_empty(line[0]),
+                pred_arg_struct=none_if_empty(line[1]),
+                logic=none_if_empty(line[2]),
+                knowledge=none_if_empty(line[3]),
+                domain=none_if_empty(line[4]),
+            )
+            examples.append(example)
+        return examples
+
+    def get_dummy_dev_examples(self, data_dir):
+        """Gets a collection of `InputExample`s for the dev set."""
+        return self.get_dev_examples(data_dir)[:10]
 
 
 def convert_examples_to_features(
@@ -381,3 +447,9 @@ num_labels_task = {
     "mrpc": 2,
     "sst-2": 2,
 }
+
+
+def is_nli_task(processor):
+    is_mnli = isinstance(processor, MnliProcessor)
+    is_diagnostic = isinstance(processor, DiagnosticProcessor)
+    return is_mnli or is_diagnostic
