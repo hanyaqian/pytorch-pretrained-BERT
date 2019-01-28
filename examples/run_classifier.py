@@ -38,7 +38,12 @@ import classifier_args
 import classifier_data as data
 from logger import logger
 import pruning
-from classifier_util import evaluate, calculate_head_importance
+from classifier_util import (
+    evaluate,
+    calculate_head_importance,
+    analyze_nli,
+    predict
+)
 
 
 def warmup_linear(x, warmup=0.002):
@@ -54,6 +59,7 @@ def prepare_dry_run(args):
     args.do_train = True
     args.do_eval = True
     args.do_prune = True
+    args.do_anal = True
     args.output_dir = tempfile.mkdtemp()
     return args
 
@@ -65,6 +71,8 @@ def main():
     classifier_args.fp16_args(parser)
     classifier_args.pruning_args(parser)
     classifier_args.eval_args(parser)
+    classifier_args.analysis_args(parser)
+
     args = parser.parse_args()
 
     if args.dry_run:
@@ -106,7 +114,7 @@ def main():
     if n_gpu > 0:
         torch.cuda.manual_seed_all(args.seed)
 
-    if not args.do_train and not args.do_eval and not args.do_prune:
+    if not (args.do_train or args.do_eval or args.do_prune or args.do_anal):
         raise ValueError(
             "At least one of `do_train`, `do_eval` or `do_prune` must be True."
         )
@@ -397,6 +405,40 @@ def main():
             for key in sorted(result.keys()):
                 logger.info("  %s = %s", key, str(result[key]))
                 writer.write("%s = %s\n" % (key, str(result[key])))
+
+    # ==== ANALYZIS ====
+    if args.do_anal:
+        if not data.is_nli_task(processor):
+            logger.warn(
+                f"You are running analysis on the NLI diagnostic set but the "
+                f"task ({args.task_name}) is not NLI"
+            )
+        anal_processor = data.DiagnosticProcessor()
+        if args.dry_run:
+            anal_examples = anal_processor.get_dummy_dev_examples(
+                args.anal_data_dir)
+        else:
+            anal_examples = anal_processor.get_dev_examples(args.anal_data_dir)
+        anal_data = data.prepare_tensor_dataset(
+            anal_examples,
+            label_list,
+            args.max_seq_length,
+            tokenizer,
+            verbose=args.verbose,
+        )
+        predictions = predict(
+            anal_data,
+            anal_examples,
+            model,
+            args.eval_batch_size,
+            verbose=True,
+        )
+        report = analyze_nli(anal_examples, predictions, label_list)
+        # Print report
+        for feature, values in report.items():
+            print(f"Scores breakdown for feature {feature}")
+            for value, accuracy in values.items():
+                print(f"{value}\t{accuracy:.5f}")
 
 
 if __name__ == "__main__":

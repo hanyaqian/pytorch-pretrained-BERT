@@ -68,6 +68,11 @@ def get_base_parser():
         help="Whether to run eval on the dev set."
     )
     parser.add_argument(
+        "--do_anal",
+        action='store_true',
+        help="Whether to run analyzis on the diagnosis set (for NLI model)."
+    )
+    parser.add_argument(
         "--do_lower_case",
         action='store_true',
         help="Set this flag if you are using an uncased model."
@@ -200,6 +205,17 @@ def eval_args(parser):
     eval_group.add_argument(
         '--save-attention-probs', default="", type=str,
         help="Save attention to file"
+    )
+
+
+def analysis_args(parser):
+    anal_group = parser.add_argument_group("Analyzis")
+    anal_group.add_argument(
+        "--anal_data_dir",
+        default=None,
+        type=str,
+        help="The input data dir. Should contain the "
+        "`diagnistic-full.tsv` file."
     )
 
 

@@ -192,3 +192,75 @@ def calculate_head_importance(
         head_importance /= norm_by_layer.unsqueeze(-1) + 1e-20
 
     return head_importance
+
+
+def predict(
+    predict_data,
+    model,
+    predict_batch_size,
+    device=None,
+    verbose=True,
+):
+    """Predict labels on a dataset"""
+
+    predict_sampler = SequentialSampler(predict_data)
+    predict_dataloader = DataLoader(
+        predict_data, sampler=predict_sampler, batch_size=predict_batch_size)
+
+    if verbose:
+        logger.info("***** Running prediction *****")
+        logger.info(f"  Num examples = {len(predict_data)}")
+        logger.info(f"  Batch size = {predict_batch_size}")
+
+    model.eval()
+    device = device or model.device
+
+    predict_iterator = tqdm(
+        predict_dataloader, desc="Analizing", disable=not verbose)
+
+    # Compute model predictions
+    predictions = []
+    for input_ids, input_mask, segment_ids, label_ids in predict_iterator:
+        input_ids = input_ids.to(device)
+        input_mask = input_mask.to(device)
+        segment_ids = segment_ids.to(device)
+        label_ids = label_ids.to(device)
+        # Compute logits
+        with torch.no_grad():
+            logits = model(input_ids, segment_ids, input_mask)
+        # Track predictions
+        batch_predictions = np.argmax(logits.detach().cpu().numpy(), axis=1)
+        for pred in batch_predictions:
+            predictions.append(batch_predictions)
+
+    return np.asarray(predictions, dtype=int)
+
+
+def analyze_nli(anal_examples, predictions, labels_list):
+    report = {
+        "label": {},
+        "lex_sem": {},
+        "pred_arg_struct": {},
+        "logic": {},
+        "knowledge": {},
+        "domain": {},
+    }
+    normalizers = {k: {} for k in report}
+    for example, pred in zip(anal_examples, predictions):
+        correct = float(anal_examples.label == labels_list[predictions])
+        for feature in report:
+            value = getattr(anal_examples, feature)
+            if value is not None:
+                # Record whether the model was correct on this particular
+                # value of the feature
+                if value not in report[feature]:
+                    report[feature][value] = 0
+                    normalizers[feature][value] = 0
+                report[feature][value] += correct
+                normalizers[feature][value] += 1
+    # Normalize report
+    for feature in report:
+        Ns = normalizers[feature]
+        report[feature] = {k: v / Ns[k] for k, v in report[feature].items()}
+
+    return report

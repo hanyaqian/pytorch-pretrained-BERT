@@ -19,3 +19,7 @@ def head_pairwise_kl(p):
     H_p = head_entropy(p).unsqueeze(-2)
     KL = H_pq - H_p
     return KL
+
+
+def none_if_empty(string):
+    return string if string != "" else None
