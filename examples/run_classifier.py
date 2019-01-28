@@ -301,6 +301,8 @@ def main():
             eval_examples = processor.get_dummy_dev_examples(args.data_dir)
         else:
             eval_examples = processor.get_dev_examples(args.data_dir)
+        # data.add_dependency_arcs(eval_examples)
+        # print(eval_examples[-2].parse_a)
         eval_data = data.prepare_tensor_dataset(
             eval_examples,
             label_list,
