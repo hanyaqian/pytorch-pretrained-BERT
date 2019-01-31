@@ -7,6 +7,7 @@ import torch
 from torch.utils.data import TensorDataset
 from dependency_parser import parse_sent
 from util import none_if_empty
+import classifier_scoring as scoring
 
 
 class InputExample(object):
@@ -109,6 +110,11 @@ class DataProcessor(object):
                 lines.append(line)
             return lines
 
+    @property
+    def scorer(self):
+        """Return a scoring class (accuracy, F1, etc...)"""
+        return scoring.Accuracy()
+
 
 class MrpcProcessor(DataProcessor):
     """Processor for the MRPC data set (GLUE version)."""
@@ -147,6 +153,11 @@ class MrpcProcessor(DataProcessor):
             )
             examples.append(example)
         return examples
+
+    @property
+    def scorer(self):
+        """Return a scoring class (accuracy, F1, etc...)"""
+        return scoring.F1()
 
 
 class Sst2Processor(DataProcessor):
@@ -257,6 +268,11 @@ class ColaProcessor(DataProcessor):
             )
             examples.append(example)
         return examples
+
+    @property
+    def scorer(self):
+        """Return a scoring class (accuracy, F1, etc...)"""
+        return scoring.Matthews()
 
 
 class DiagnosticProcessor(DataProcessor):

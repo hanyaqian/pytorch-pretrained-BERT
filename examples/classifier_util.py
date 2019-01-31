@@ -15,14 +15,15 @@ def accuracy(out, labels):
 
 
 def evaluate(
-    eval_data,
-    model,
-    eval_batch_size,
-    save_attention_probs=False,
-    print_head_entropy=False,
-    device=None,
-    result=None,
-    verbose=True,
+        eval_data,
+        model,
+        eval_batch_size,
+        save_attention_probs=False,
+        print_head_entropy=False,
+        device=None,
+        result=None,
+        verbose=True,
+        scorer=None,
 ):
     """Evaluate the model's accuracy"""
     eval_sampler = SequentialSampler(eval_data)
@@ -53,7 +54,8 @@ def evaluate(
         attn_kl = torch.zeros(n_layers, n_heads, n_heads).to(device)
 
     tot_tokens = 0
-
+    all_predicitions = []
+    all_labels = []
     eval_iterator = tqdm(
         eval_dataloader, desc="Evaluating", disable=not verbose)
     for input_ids, input_mask, segment_ids, label_ids in eval_iterator:
@@ -69,11 +71,15 @@ def evaluate(
                 input_ids, segment_ids, input_mask, return_att=True)
 
         logits = logits.detach().cpu().numpy()
+        predictions = np.argmax(logits, axis=-1)
         label_ids = label_ids.to('cpu').numpy()
         tmp_eval_accuracy = accuracy(logits, label_ids)
 
         eval_loss += tmp_eval_loss.mean().item()
         eval_accuracy += tmp_eval_accuracy
+
+        all_predicitions.extend(predictions)
+        all_labels.extend(label_ids)
 
         nb_eval_examples += input_ids.size(0)
         nb_eval_steps += 1
@@ -106,6 +112,11 @@ def evaluate(
     result = result or {}
     result["eval_loss"] = eval_loss
     result["eval_accuracy"] = eval_accuracy
+    # Add task specific score
+    if scorer is not None:
+        all_predicitions = np.asarray(all_predicitions)
+        all_labels = np.asarray(all_labels)
+        result[scorer.name] = scorer(all_predicitions, all_labels)
 
     if print_head_entropy and verbose:
         # Print layer/headwise entropy

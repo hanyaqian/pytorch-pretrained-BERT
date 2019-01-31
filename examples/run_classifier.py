@@ -399,7 +399,8 @@ def main():
             save_attention_probs=args.save_attention_probs,
             print_head_entropy=True,
             device=device,
-            result=result
+            result=result,
+            scorer=processor.scorer,
         )
         output_eval_file = os.path.join(args.output_dir, "eval_results.txt")
         with open(output_eval_file, "w") as writer:
@@ -446,4 +447,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
