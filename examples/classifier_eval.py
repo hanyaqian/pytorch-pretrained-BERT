@@ -36,7 +36,8 @@ def evaluate(
         logger.info(f"  Batch size = {eval_batch_size}")
 
     model.eval()
-    device = device or model.device
+    # Device
+    device = device or next(model.parameters()).device
 
     # Run prediction for full data
     eval_loss, eval_accuracy = 0, 0
@@ -85,7 +86,6 @@ def evaluate(
         nb_eval_examples += input_ids.size(0)
         nb_eval_steps += 1
 
-
         # Record attention entropy
         for layer, attn in enumerate(attns):
             mask = input_mask.float()
@@ -97,7 +97,8 @@ def evaluate(
             attn_kl[layer] += masked_kl.sum(-1).sum(0).detach()
             # Avg distance
             attn_pointer = attn.argmax(dim=-1).float()
-            self_pos = torch.arange(attn.size(2)).to(device).view(1, 1, -1).float()
+            self_pos = torch.arange(attn.size(2)).to(
+                device).view(1, 1, -1).float()
             distance = torch.abs(self_pos - attn_pointer) * mask.unsqueeze(1)
             attn_distance[layer] += distance.sum(-1).sum(0)
             # Number of tokens
@@ -141,7 +142,7 @@ def evaluate(
             for head in range(len(attn_kl[layer])):
                 head_kl = attn_kl[layer, head].cpu().data
                 print("\t".join(f"{kl:.5f}" for kl in head_kl))
-        
+
         # Print layer/headwise entropy
         print("Average attention distance")
         attn_distance /= tot_tokens.float()
@@ -160,7 +161,7 @@ def calculate_head_importance(
         model,
         data,
         batch_size,
-        device,
+        device=None,
         normalize_scores_by_layer=True,
         verbose=True,
         subset_size=1.0,
@@ -168,6 +169,8 @@ def calculate_head_importance(
     """Calculate head importance scores"""
     # Disable dropout
     model.eval()
+    # Device
+    device = device or next(model.parameters()).device
     n_prune_steps = int(np.ceil(
         len(data)
         / batch_size
@@ -238,7 +241,8 @@ def predict(
         logger.info(f"  Batch size = {predict_batch_size}")
 
     model.eval()
-    device = device or model.device
+    # Device
+    device = device or next(model.parameters()).device
 
     predict_iterator = tqdm(
         predict_dataloader, desc="Analizing", disable=not verbose)

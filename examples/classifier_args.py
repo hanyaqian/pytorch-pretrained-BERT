@@ -182,6 +182,19 @@ def pruning_args(parser):
         action='store_true',
         help="Evaluate the network after pruning"
     )
+    prune_group.add_argument(
+        "--n_retrain_steps_after_pruning",
+        type=int,
+        default=0,
+        help="Retrain the network after pruning for a fixed number of steps"
+    )
+    prune_group.add_argument(
+        "--retrain_learning_rate",
+        type=float,
+        default=1e-2,
+        help="Learning rate for retraining the network after pruning for a "
+        "fixed number of steps"
+    )
 
 
 def eval_args(parser):
