@@ -51,6 +51,7 @@ def evaluate(
         n_heads = model.bert.config.num_attention_heads
         attn_entropy = torch.zeros(n_layers, n_heads).to(device)
         attn_kl = torch.zeros(n_layers, n_heads, n_heads).to(device)
+        attn_distance = torch.zeros(n_layers, n_heads).to(device)
 
     tot_tokens = 0
 
@@ -78,6 +79,7 @@ def evaluate(
         nb_eval_examples += input_ids.size(0)
         nb_eval_steps += 1
 
+
         # Record attention entropy
         for layer, attn in enumerate(attns):
             mask = input_mask.float()
@@ -87,6 +89,11 @@ def evaluate(
             # KL
             masked_kl = head_pairwise_kl(attn) * mask.unsqueeze(1).unsqueeze(1)
             attn_kl[layer] += masked_kl.sum(-1).sum(0).detach()
+            # Avg distance
+            attn_pointer = attn.argmax(dim=-1).float()
+            self_pos = torch.arange(attn.size(2)).to(device).view(1, 1, -1).float()
+            distance = torch.abs(self_pos - attn_pointer) * mask.unsqueeze(1)
+            attn_distance[layer] += distance.sum(-1).sum(0)
             # Number of tokens
             tot_tokens += mask.detach().sum().data
 
@@ -123,6 +130,13 @@ def evaluate(
             for head in range(len(attn_kl[layer])):
                 head_kl = attn_kl[layer, head].cpu().data
                 print("\t".join(f"{kl:.5f}" for kl in head_kl))
+        
+        # Print layer/headwise entropy
+        print("Average attention distance")
+        attn_distance /= tot_tokens.float()
+        for layer in range(len(attn_distance)):
+            print(
+                "\t".join(f"{H:.5f}" for H in attn_distance[layer].cpu().data))
 
     if save_attention_probs != "":
         torch.save(attns_to_save,
