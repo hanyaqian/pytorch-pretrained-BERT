@@ -21,5 +21,27 @@ def head_pairwise_kl(p):
     return KL
 
 
+def attn_disagreement(p):
+    # p has shape bsz x nheads x L x L and is normalized in the last
+    # dim
+    n_heads = p.size(1)
+    return torch.einsum("bilk,bjlk->bl", [p, p]) / n_heads ** 2
+
+
+def out_disagreement(out):
+    # out has shape bsz x nheads x L x d
+    n_heads = out.size(1)
+    return torch.einsum("bild,bjld->bl", [out, out]) / n_heads ** 2
+
+
+def print_1d_tensor(tensor):
+    print("\t".join(f"{x:.5f}" for x in tensor.cpu().data))
+
+
+def print_2d_tensor(tensor):
+    for row in range(len(tensor)):
+        print_1d_tensor(tensor[row])
+
+
 def none_if_empty(string):
     return string if string != "" else None

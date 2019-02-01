@@ -6,7 +6,7 @@ import torch
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 
 from logger import logger
-from util import head_entropy, head_pairwise_kl
+import util
 
 
 def accuracy(out, labels):
@@ -54,6 +54,8 @@ def evaluate(
         attn_entropy = torch.zeros(n_layers, n_heads).to(device)
         attn_kl = torch.zeros(n_layers, n_heads, n_heads).to(device)
         attn_distance = torch.zeros(n_layers, n_heads).to(device)
+        attn_disagreement = torch.zeros(n_layers).to(device)
+        out_disagreement = torch.zeros(n_layers).to(device)
 
     tot_tokens = 0
     all_predicitions = []
@@ -89,11 +91,12 @@ def evaluate(
         # Record attention entropy
         for layer, attn in enumerate(attns):
             mask = input_mask.float()
+            bsz, L = mask.size()
             # Entropy
-            masked_entropy = head_entropy(attn) * mask.unsqueeze(1)
+            masked_entropy = util.head_entropy(attn) * mask.unsqueeze(1)
             attn_entropy[layer] += masked_entropy.sum(-1).sum(0).detach()
             # KL
-            masked_kl = head_pairwise_kl(attn) * mask.unsqueeze(1).unsqueeze(1)
+            masked_kl = util.head_pairwise_kl(attn) * mask.view(bsz, 1, 1, L)
             attn_kl[layer] += masked_kl.sum(-1).sum(0).detach()
             # Avg distance
             attn_pointer = attn.argmax(dim=-1).float()
@@ -101,6 +104,12 @@ def evaluate(
                 device).view(1, 1, -1).float()
             distance = torch.abs(self_pos - attn_pointer) * mask.unsqueeze(1)
             attn_distance[layer] += distance.sum(-1).sum(0)
+            # disagreement
+            attn_disagreement[layer] += util.attn_disagreement(attn).sum()
+            self_att = model.bert.encoder.layer[layer].attention.self
+            ctx = self_att.context_layer_val
+            out_disagreement[layer] += util.out_disagreement(ctx).sum()
+
             # Number of tokens
             tot_tokens += mask.detach().sum().data
 
@@ -130,9 +139,7 @@ def evaluate(
         # Print layer/headwise entropy
         print("Head entropy")
         attn_entropy /= tot_tokens.float()
-        for layer in range(len(attn_entropy)):
-            print(
-                "\t".join(f"{H:.5f}" for H in attn_entropy[layer].cpu().data))
+        util.print_2d_tensor(attn_entropy)
 
         # Print pairwise layer kl
         print("Pairwise head KL")
@@ -146,9 +153,15 @@ def evaluate(
         # Print layer/headwise entropy
         print("Average attention distance")
         attn_distance /= tot_tokens.float()
-        for layer in range(len(attn_distance)):
-            print(
-                "\t".join(f"{H:.5f}" for H in attn_distance[layer].cpu().data))
+        util.print_2d_tensor(attn_distance)
+
+        print("Head attention disagreement")
+        attn_disagreement /= tot_tokens.float()
+        util.print_1d_tensor(attn_disagreement)
+
+        print("Head output disagreement")
+        out_disagreement /= tot_tokens.float()
+        util.print_1d_tensor(out_disagreement)
 
     if save_attention_probs != "":
         torch.save(attns_to_save,
