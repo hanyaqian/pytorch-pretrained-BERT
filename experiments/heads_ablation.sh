@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 
-OPTIONS=${1:-""}
+TASK=$1
+OPTIONS="${@:2}"
 
 here="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-source $here/prepare_task.sh MNLI
+source $here/prepare_task.sh $TASK
+
 
 echo $base_acc
 echo $part
@@ -14,7 +16,7 @@ do
     for head in `seq 1 12`
     do
         mask_str="${layer}:${head}"
-        acc=$(run_eval "--attention-mask-heads $mask_str $OPTIONS" | grep eval_accuracy | rev | cut -d" " -f1 | rev)
+        acc=$(run_eval "--attention_mask_heads $mask_str $OPTIONS" | grep eval_accuracy | rev | cut -d" " -f1 | rev)
         printf " & %.5f" $(echo "$acc - $base_acc" | bc )
     done
     echo " \\\\"

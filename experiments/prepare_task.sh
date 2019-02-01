@@ -2,9 +2,16 @@
 
 TASK=$1
 TRAIN_OPTIONS="${@:2}"
+FEATURE_MODE=${FEATURE_MODE:-0}
+
+prefix="$TASK"
+if [ "$FEATURE_MODE" -eq "1" ]
+then
+    prefix="${TASK}-feature"
+fi
 
 mkdir -p models
-model_dir=models/$TASK
+model_dir=models/$prefix
 mkdir -p $model_dir
 
 function run_train () {
