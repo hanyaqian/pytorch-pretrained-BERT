@@ -212,6 +212,10 @@ def main():
     # Trainable parameters
     param_optimizer = list(model.named_parameters())
     no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
+    # Only train the classifier in feature mode
+    if args.feature_mode:
+        param_optimizer = [(n, p) for n, p in param_optimizer
+                           if n.startswith("classifier")]
     optimizer_grouped_parameters = [
         {'params': [p for n, p in param_optimizer if not any(
             nd in n for nd in no_decay)], 'weight_decay': 0.01},

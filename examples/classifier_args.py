@@ -93,6 +93,11 @@ def get_base_parser():
         action='store_true',
         help="Print data examples"
     )
+    parser.add_argument(
+        "--feature_mode",
+        action='store_true',
+        help="Don't update the BERT weights."
+    )
     return parser
 
 
