@@ -150,6 +150,10 @@ def evaluate(
                 head_kl = attn_kl[layer, head].cpu().data
                 print("\t".join(f"{kl:.5f}" for kl in head_kl))
 
+        print("Average pairwise head KL per layer")
+        attn_entropy /= tot_tokens.float()
+        util.print_1d_tensor(attn_kl.mean(-1).mean(-1))
+
         # Print layer/headwise entropy
         print("Average attention distance")
         attn_distance /= tot_tokens.float()

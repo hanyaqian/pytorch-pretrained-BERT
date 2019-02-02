@@ -210,33 +210,35 @@ def main():
     # ==== PREPARE TRAINING ====
 
     # Trainable parameters
-    param_optimizer = list(model.named_parameters())
-    no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
-    # Only train the classifier in feature mode
-    if args.feature_mode:
-        param_optimizer = [(n, p) for n, p in param_optimizer
-                           if n.startswith("classifier")]
-    optimizer_grouped_parameters = [
-        {'params': [p for n, p in param_optimizer if not any(
-            nd in n for nd in no_decay)], 'weight_decay': 0.01},
-        {'params': [p for n, p in param_optimizer if any(
-            nd in n for nd in no_decay)], 'weight_decay': 0.0}
-    ]
-    # Prepare optimizer
-    num_train_steps = int(
-        len(train_examples)
-        / args.train_batch_size
-        / args.gradient_accumulation_steps
-    ) * args.num_train_epochs
-    optimizer, lr_schedule = training.prepare_bert_adam(
-        optimizer_grouped_parameters,
-        args.learning_rate,
-        num_train_steps,
-        args.warmup_proportion,
-        loss_scale=args.loss_scale,
-        local_rank=args.local_rank,
-        fp16=args.fp16,
-    )
+    if args.do_train or args.do_prune:
+        param_optimizer = list(model.named_parameters())
+        no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
+        # Only train the classifier in feature mode
+        if args.feature_mode:
+            param_optimizer = [(n, p) for n, p in param_optimizer
+                               if n.startswith("classifier")]
+        optimizer_grouped_parameters = [
+            {'params': [p for n, p in param_optimizer if not any(
+                nd in n for nd in no_decay)], 'weight_decay': 0.01},
+            {'params': [p for n, p in param_optimizer if any(
+                nd in n for nd in no_decay)], 'weight_decay': 0.0}
+        ]
+    # Prepare optimizer for fine-tuning on task
+    if args.do_train:
+        num_train_steps = int(
+            len(train_examples)
+            / args.train_batch_size
+            / args.gradient_accumulation_steps
+        ) * args.num_train_epochs
+        optimizer, lr_schedule = training.prepare_bert_adam(
+            optimizer_grouped_parameters,
+            args.learning_rate,
+            num_train_steps,
+            args.warmup_proportion,
+            loss_scale=args.loss_scale,
+            local_rank=args.local_rank,
+            fp16=args.fp16,
+        )
     # Prepare optimizer for tuning after pruning
     if args.do_prune and args.n_retrain_steps_after_pruning > 0:
         retrain_optimizer = SGD(

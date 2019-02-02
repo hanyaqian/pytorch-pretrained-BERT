@@ -4,20 +4,19 @@ import torch
 def head_entropy(p):
     plogp = p * torch.log(p)
     plogp[p == 0] = 0
-    return -plogp.sum(dim=-1)
+    return - plogp.sum(dim=-1)
 
 
 def head_pairwise_kl(p):
     # p has shape bsz x nheads x L x L and is normalized in the last
     # dim
     logp = torch.log(p)
-    logp[p == 0] = 0
-    H_pq = -torch.einsum(
-        "blij,bljk->blik",
-        [p.permute(0, 2, 1, 3), logp.permute(0, 2, 3, 1)]
-    ).permute(0, 2, 3, 1)
+    logp[p == 0] = -40
+    H_pq = -torch.einsum("bilk,bjlk->bijl", [p, logp])
     H_p = head_entropy(p).unsqueeze(-2)
     KL = H_pq - H_p
+    KL.masked_fill_(p.sum(-1).eq(0).unsqueeze(1), 0.0)
+    KL.masked_fill_(p.sum(-1).eq(0).unsqueeze(2), 0.0)
     return KL
 
 
@@ -25,13 +24,16 @@ def attn_disagreement(p):
     # p has shape bsz x nheads x L x L and is normalized in the last
     # dim
     n_heads = p.size(1)
-    return torch.einsum("bilk,bjlk->bl", [p, p]) / n_heads ** 2
+    return torch.einsum("bilk,bjlk->b", [p, p]) / n_heads ** 2
 
 
 def out_disagreement(out):
     # out has shape bsz x nheads x L x d
     n_heads = out.size(1)
-    return torch.einsum("bild,bjld->bl", [out, out]) / n_heads ** 2
+    # Normalize
+    out /= torch.sqrt((out ** 2).sum(-1)).unsqueeze(-1) + 1e-20
+    cosine = torch.einsum("bild,bjld->b", [out, out])
+    return cosine / n_heads ** 2
 
 
 def print_1d_tensor(tensor):
