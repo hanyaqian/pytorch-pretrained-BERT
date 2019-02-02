@@ -8,6 +8,7 @@ prefix="$TASK"
 if [ "$FEATURE_MODE" -eq "1" ]
 then
     prefix="${TASK}-feature"
+    TRAIN_OPTIONS="$TRAIN_OPTIONS --feature_mode"
 fi
 
 mkdir -p models
