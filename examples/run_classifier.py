@@ -370,7 +370,7 @@ def main():
                 )[metric]
                 logger.info("***** Pruning eval results *****")
                 tot_pruned = sum(len(heads) for heads in to_prune.values())
-                print(f"{tot_pruned}\t{accuracy}")
+                logger.info(f"{tot_pruned}\t{accuracy}")
 
     # ==== EVALUATE ====
     if args.do_eval and is_main:
