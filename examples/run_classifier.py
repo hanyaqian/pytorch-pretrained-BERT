@@ -242,7 +242,7 @@ def main():
     # Prepare optimizer for tuning after pruning
     if args.do_prune and args.n_retrain_steps_after_pruning > 0:
         retrain_optimizer = SGD(
-            optimizer_grouped_parameters,
+            model.parameters(),
             lr=args.retrain_learning_rate
         )
 
