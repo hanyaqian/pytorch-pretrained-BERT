@@ -239,12 +239,6 @@ def main():
             local_rank=args.local_rank,
             fp16=args.fp16,
         )
-    # Prepare optimizer for tuning after pruning
-    if args.do_prune and args.n_retrain_steps_after_pruning > 0:
-        retrain_optimizer = SGD(
-            model.parameters(),
-            lr=args.retrain_learning_rate
-        )
 
     # ==== TRAIN ====
     global_step = 0
@@ -312,6 +306,12 @@ def main():
             model.bert.config.num_attention_heads,
             args.at_least_one_head_per_layer,
         )
+        # Prepare optimizer for tuning after pruning
+        if args.n_retrain_steps_after_pruning > 0:
+            retrain_optimizer = SGD(
+                model.parameters(),
+                lr=args.retrain_learning_rate
+            )
 
         # TODO: refqctor
         for step, n_to_prune in enumerate(prune_sequence):
@@ -328,10 +328,10 @@ def main():
                     verbose=False,
                 )
 
-                print("Head importance scores")
+                logger.info("Head importance scores")
                 for layer in range(len(head_importance)):
                     layer_importance = head_importance[layer].cpu().data
-                    print("\t".join(f"{x:.5f}" for x in layer_importance))
+                    logger.info("\t".join(f"{x:.5f}" for x in layer_importance))
             # Determine which heads to prune
             to_prune = pruning.what_to_prune(
                 head_importance,
@@ -354,8 +354,8 @@ def main():
             # Evaluate
             if args.eval_pruned:
                 # Print the pruning descriptor
-                print("Evaluating following pruning strategy")
-                print(pruning.to_pruning_descriptor(to_prune))
+                logger.info("Evaluating following pruning strategy")
+                logger.info(pruning.to_pruning_descriptor(to_prune))
                 # Eval accuracy
                 metric = processor.scorer.name
                 accuracy = evaluate(
