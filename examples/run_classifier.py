@@ -326,7 +326,6 @@ def main():
                     subset_size=args.compute_head_importance_on_subset,
                     verbose=False,
                 )
-
                 logger.info("Head importance scores")
                 for layer in range(len(head_importance)):
                     layer_scores = head_importance[layer].cpu().data
