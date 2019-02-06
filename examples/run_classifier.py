@@ -101,6 +101,12 @@ def main():
             "empty."
         )
 
+    if args.n_retrain_steps_after_pruning > 0 and args.retrain_pruned_heads:
+        raise ValueError(
+            "--n_retrain_steps_after_pruning and --retrain_pruned_heads are "
+            "mutually exclusive"
+        )
+
     # ==== SETUP DEVICE ====
 
     if args.local_rank == -1 or args.no_cuda:
@@ -315,6 +321,24 @@ def main():
                 model.parameters(),
                 lr=args.retrain_learning_rate
             )
+        elif args.retrain_pruned_heads:
+            head_grouped_parameters = {
+                'params':
+                    [p for layer in model.bert.encoder.layer
+                     for p in layer.attention.self.parameters()] +
+                    [p for layer in model.bert.encoder.layer
+                     for p in layer.attention.output.dense.parameters()],
+                'weight_decay': 0.01
+            }
+            retrain_optimizer, lr_schedule = training.prepare_bert_adam(
+                [head_grouped_parameters],
+                args.learning_rate,
+                num_train_steps,
+                args.warmup_proportion,
+                loss_scale=args.loss_scale,
+                local_rank=args.local_rank,
+                fp16=args.fp16,
+            )
 
         for step, n_to_prune in enumerate(prune_sequence):
 
@@ -344,20 +368,6 @@ def main():
             model.bert.mask_heads(to_prune)
             # Maybe continue training a bit
             if args.n_retrain_steps_after_pruning > 0:
-                if args.retrain_pruned_heads_only:
-                    # Reload BERT
-                    base_bert = None
-                    if args.reinit_from_pretrained:
-                        base_bert = BertForSequenceClassification.from_pretrained(  # noqa
-                            args.bert_model,
-                            cache_dir=PYTORCH_PRETRAINED_BERT_CACHE /
-                            f"distributed_{args.local_rank}",
-                            num_labels=num_labels
-                        ).bert
-                        base_bert.to(device)
-                    # Reinit
-                    model.bert.reset_heads(to_prune, base_bert)
-
                 set_seeds(args.seed + step, n_gpu)
                 training.train(
                     train_data,
@@ -367,6 +377,39 @@ def main():
                     n_steps=args.n_retrain_steps_after_pruning,
                     device=device,
                 )
+            elif args.retrain_pruned_heads:
+                # Reload BERT
+                base_bert = None
+                if args.reinit_from_pretrained:
+                    base_bert = BertForSequenceClassification.from_pretrained(  # noqa
+                        args.bert_model,
+                        cache_dir=PYTORCH_PRETRAINED_BERT_CACHE /
+                        f"distributed_{args.local_rank}",
+                        num_labels=num_labels
+                    ).bert
+                    base_bert.to(device)
+                # Reinit
+                model.bert.reset_heads(to_prune, base_bert)
+                # Unmask heads
+                model.bert.mask_heads({})
+                # Retrain heads
+                training.train(
+                    train_data,
+                    model,
+                    retrain_optimizer,
+                    args.train_batch_size,
+                    gradient_accumulation_steps=args.gradient_accumulation_steps,  # noqa
+                    device=device,
+                    verbose=False,
+                    n_gpu=n_gpu,
+                    global_step=0,
+                    lr_schedule=lr_schedule,
+                    n_epochs=args.num_train_epochs,
+                    local_rank=args.local_rank,
+                    fp16=args.fp16,
+                    mask_heads_grad=to_prune,
+                )
+
             # Evaluate
             if args.eval_pruned:
                 # Print the pruning descriptor

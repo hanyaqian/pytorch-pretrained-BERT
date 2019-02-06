@@ -201,7 +201,7 @@ def pruning_args(parser):
         "fixed number of steps"
     )
     prune_group.add_argument(
-        "--retrain_pruned_heads_only",
+        "--retrain_pruned_heads",
         action='store_true',
         help="Retrain the pruned heads"
     )

@@ -81,6 +81,7 @@ def train(
     local_rank=-1,
     n_steps=None,
     fp16=False,
+    mask_heads_grad=None,
 ):
     """Train for a fixed number of steps/epochs"""
     # Device
@@ -134,7 +135,8 @@ def train(
             n_gpu=n_gpu,
             gradient_accumulation_steps=gradient_accumulation_steps,
             fp16=fp16,
-            n_steps=n_remaining_steps if not full_epoch else None
+            n_steps=n_remaining_steps if not full_epoch else None,
+            mask_heads_grad=mask_heads_grad,
         )
         # Update total loss / nb of steps
         tr_loss += epoch_tr_loss
@@ -163,6 +165,7 @@ def train_epoch(
     gradient_accumulation_steps=1,
     fp16=False,
     n_steps=None,
+    mask_heads_grad=None,
 ):
     """Train for one epoch (or a fixed number of steps)"""
     # Device
@@ -203,6 +206,8 @@ def train_epoch(
                 lr_this_step = lr_schedule(global_step)
                 for param_group in optimizer.param_groups:
                     param_group['lr'] = lr_this_step
+            if mask_heads_grad is not None:
+                model.bert.mask_heads_grad(mask_heads_grad)
             # Update parameters
             optimizer.step()
             optimizer.zero_grad()

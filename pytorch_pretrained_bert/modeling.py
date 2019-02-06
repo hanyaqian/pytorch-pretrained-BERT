@@ -29,7 +29,7 @@ from torch import nn
 from torch.nn import CrossEntropyLoss
 
 from .file_utils import cached_path
-from .util import interpolate_linear_layer
+from .util import interpolate_linear_layer, mask_grad_linear_layer
 
 logger = logging.getLogger(__name__)
 
@@ -226,11 +226,11 @@ class BertEmbeddings(nn.Module):
         if token_type_ids is None:
             token_type_ids = torch.zeros_like(input_ids)
 
-        words_embeddings = self.word_embeddings(input_ids)
-        position_embeddings = self.position_embeddings(position_ids)
-        token_type_embeddings = self.token_type_embeddings(token_type_ids)
+        words_embed = self.word_embeddings(input_ids)
+        position_embed = self.position_embeddings(position_ids)
+        token_type_embed = self.token_type_embeddings(token_type_ids)
 
-        embeddings = words_embeddings + position_embeddings + token_type_embeddings
+        embeddings = words_embed + position_embed + token_type_embed
         embeddings = self.LayerNorm(embeddings)
         embeddings = self.dropout(embeddings)
         return embeddings
@@ -370,6 +370,21 @@ class BertAttention(nn.Module):
             dim=0,
             other_layer=None if other is None else other.output.dense,
         )
+
+    def mask_heads_grad(self, heads):
+        device = next((self.self.parameters())).device
+        mask = torch.ones(self.self.n_heads, self.self.d_head)
+        for head in heads:
+            mask[head] = 0
+        mask = mask.view(-1).contiguous().eq(1).to(device)
+        # Mask query gradients
+        mask_grad_linear_layer(self.self.query, mask, dim=-1)
+        # Mask key gradients
+        mask_grad_linear_layer(self.self.key, mask, dim=-1)
+        # Mask value gradients
+        mask_grad_linear_layer(self.self.value, mask, dim=-1)
+        # Mask output gradients
+        mask_grad_linear_layer(self.output.dense, mask, dim=0)
 
 
 class BertIntermediate(nn.Module):
@@ -750,6 +765,10 @@ class BertModel(PreTrainedBertModel):
             self_att = self.encoder.layer[layer].attention.self
             self_att.mask_heads = list(heads)
             self_att._head_mask = None
+
+    def mask_heads_grad(self, to_mask):
+        for layer, heads in to_mask.items():
+            self.encoder.layer[layer].attention.mask_heads_grad(heads)
 
     def reset_heads(self, to_reset, other_bert=None):
         other_layer = None
