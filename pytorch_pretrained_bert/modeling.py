@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Google AI Language Team Authors and The HugginFace Inc. team.
+# Copyright 2018 The Google AI Language Team Authors and The HugginFace Inc. team
 # Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,10 +15,6 @@
 # limitations under the License.
 """PyTorch BERT model."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import os
 import copy
 import json
@@ -33,17 +29,18 @@ from torch import nn
 from torch.nn import CrossEntropyLoss
 
 from .file_utils import cached_path
+from .util import interpolate_linear_layer
 
 logger = logging.getLogger(__name__)
 
 PRETRAINED_MODEL_ARCHIVE_MAP = {
-    'bert-base-uncased': "https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-uncased.tar.gz",
-    'bert-large-uncased': "https://s3.amazonaws.com/models.huggingface.co/bert/bert-large-uncased.tar.gz",
-    'bert-base-cased': "https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-cased.tar.gz",
-    'bert-large-cased': "https://s3.amazonaws.com/models.huggingface.co/bert/bert-large-cased.tar.gz",
-    'bert-base-multilingual-uncased': "https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-multilingual-uncased.tar.gz",
-    'bert-base-multilingual-cased': "https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-multilingual-cased.tar.gz",
-    'bert-base-chinese': "https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-chinese.tar.gz",
+    'bert-base-uncased': "https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-uncased.tar.gz",  # noqa
+    'bert-large-uncased': "https://s3.amazonaws.com/models.huggingface.co/bert/bert-large-uncased.tar.gz",  # noqa
+    'bert-base-cased': "https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-cased.tar.gz",  # noqa
+    'bert-large-cased': "https://s3.amazonaws.com/models.huggingface.co/bert/bert-large-cased.tar.gz",  # noqa
+    'bert-base-multilingual-uncased': "https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-multilingual-uncased.tar.gz",  # noqa
+    'bert-base-multilingual-cased': "https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-multilingual-cased.tar.gz",  # noqa
+    'bert-base-chinese': "https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-chinese.tar.gz",  # noqa
 }
 CONFIG_NAME = 'bert_config.json'
 WEIGHTS_NAME = 'pytorch_model.bin'
@@ -51,8 +48,10 @@ WEIGHTS_NAME = 'pytorch_model.bin'
 
 def gelu(x):
     """Implementation of the gelu activation function.
-        For information: OpenAI GPT's gelu is slightly different (and gives slightly different results):
-        0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3))))
+        For information: OpenAI GPT's gelu is slightly different
+        (and gives slightly different results):
+        0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi)
+                   * (x + 0.044715 * torch.pow(x, 3))))
     """
     return x * 0.5 * (1.0 + torch.erf(x / math.sqrt(2.0)))
 
@@ -68,44 +67,49 @@ class BertConfig(object):
     """Configuration class to store the configuration of a `BertModel`.
     """
 
-    def __init__(self,
-                 vocab_size_or_config_json_file,
-                 hidden_size=768,
-                 num_hidden_layers=12,
-                 num_attention_heads=12,
-                 intermediate_size=3072,
-                 hidden_act="gelu",
-                 hidden_dropout_prob=0.1,
-                 attention_probs_dropout_prob=0.1,
-                 max_position_embeddings=512,
-                 type_vocab_size=2,
-                 initializer_range=0.02):
+    def __init__(
+        self,
+        vocab_size_or_config_json_file,
+        hidden_size=768,
+        num_hidden_layers=12,
+        num_attention_heads=12,
+        intermediate_size=3072,
+        hidden_act="gelu",
+        hidden_dropout_prob=0.1,
+        attention_probs_dropout_prob=0.1,
+        max_position_embeddings=512,
+        type_vocab_size=2,
+        initializer_range=0.02
+    ):
         """Constructs BertConfig.
 
         Args:
-            vocab_size_or_config_json_file: Vocabulary size of `inputs_ids` in `BertModel`.
+            vocab_size_or_config_json_file: Vocabulary size of `inputs_ids` in
+                `BertModel`.
             hidden_size: Size of the encoder layers and the pooler layer.
-            num_hidden_layers: Number of hidden layers in the Transformer encoder.
-            num_attention_heads: Number of attention heads for each attention layer in
-                the Transformer encoder.
-            intermediate_size: The size of the "intermediate" (i.e., feed-forward)
+            num_hidden_layers: Number of hidden layers in the Transformer
+                encoder.
+            num_attention_heads: Number of attention heads for each attention
                 layer in the Transformer encoder.
-            hidden_act: The non-linear activation function (function or string) in the
-                encoder and pooler. If string, "gelu", "relu" and "swish" are supported.
-            hidden_dropout_prob: The dropout probabilitiy for all fully connected
-                layers in the embeddings, encoder, and pooler.
+            intermediate_size: The size of the "intermediate"
+                (i.e., feed-forward) layer in the Transformer encoder.
+            hidden_act: The non-linear activation function (function or string)
+                in the encoder and pooler. If string, "gelu", "relu" and
+                "swish" are supported.
+            hidden_dropout_prob: The dropout probabilitiy for all fully
+                connected layers in the embeddings, encoder, and pooler.
             attention_probs_dropout_prob: The dropout ratio for the attention
                 probabilities.
-            max_position_embeddings: The maximum sequence length that this model might
-                ever be used with. Typically set this to something large just in case
-                (e.g., 512 or 1024 or 2048).
-            type_vocab_size: The vocabulary size of the `token_type_ids` passed into
-                `BertModel`.
-            initializer_range: The sttdev of the truncated_normal_initializer for
-                initializing all weight matrices.
+            max_position_embeddings: The maximum sequence length that this
+                model might ever be used with. Typically set this to something
+                large just in case (e.g., 512 or 1024 or 2048).
+            type_vocab_size: The vocabulary size of the `token_type_ids`
+                passed into `BertModel`.
+            initializer_range: The sttdev of the truncated_normal_initializer
+                for initializing all weight matrices.
         """
         if isinstance(vocab_size_or_config_json_file, str):
-            with open(vocab_size_or_config_json_file, "r", encoding='utf-8') as reader:
+            with open(vocab_size_or_config_json_file, "r", encoding='utf-8') as reader:  # noqa
                 json_config = json.loads(reader.read())
             for key, value in json_config.items():
                 self.__dict__[key] = value
@@ -122,8 +126,10 @@ class BertConfig(object):
             self.type_vocab_size = type_vocab_size
             self.initializer_range = initializer_range
         else:
-            raise ValueError("First argument must be either a vocabulary size (int)"
-                             "or the path to a pretrained model config file (str)")
+            raise ValueError(
+                "First argument must be either a vocabulary size (int)"
+                "or the path to a pretrained model config file (str)"
+            )
 
     @classmethod
     def from_dict(cls, json_object):
@@ -170,13 +176,17 @@ class BertConfig(object):
 
 
 try:
-    from apex.normalization.fused_layer_norm import FusedLayerNorm as BertLayerNorm
+    from apex.normalization.fused_layer_norm import FusedLayerNorm as BertLayerNorm  # noqa
 except ImportError:
-    print("Better speed can be achieved with apex installed from https://www.github.com/nvidia/apex.")
+    print(
+        "Better speed can be achieved with apex installed from "
+        "https://www.github.com/nvidia/apex."
+    )
 
     class BertLayerNorm(nn.Module):
         def __init__(self, hidden_size, eps=1e-12):
-            """Construct a layernorm module in the TF style (epsilon inside the square root).
+            """Construct a layernorm module in the TF style
+            (epsilon inside the square root).
             """
             super(BertLayerNorm, self).__init__()
             self.weight = nn.Parameter(torch.ones(hidden_size))
@@ -203,8 +213,8 @@ class BertEmbeddings(nn.Module):
         self.token_type_embeddings = nn.Embedding(
             config.type_vocab_size, config.hidden_size)
 
-        # self.LayerNorm is not snake-cased to stick with TensorFlow model variable name and be able to load
-        # any TensorFlow checkpoint file
+        # self.LayerNorm is not snake-cased to stick with TensorFlow model
+        # variable name and be able to load any TensorFlow checkpoint file
         self.LayerNorm = BertLayerNorm(config.hidden_size, eps=1e-12)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
@@ -231,16 +241,16 @@ class BertSelfAttention(nn.Module):
         super(BertSelfAttention, self).__init__()
         if config.hidden_size % config.num_attention_heads != 0:
             raise ValueError(
-                "The hidden size (%d) is not a multiple of the number of attention "
-                "heads (%d)" % (config.hidden_size, config.num_attention_heads))
-        self.num_attention_heads = config.num_attention_heads
-        self.attention_head_size = int(
-            config.hidden_size / config.num_attention_heads)
-        self.all_head_size = self.num_attention_heads * self.attention_head_size
+                f"The hidden size ({config.hidden_size}) is not a multiple of "
+                f"the number of attention heads ({config.num_attention_heads})"
+            )
+        self.d_hidden = config.hidden_size
+        self.n_heads = config.num_attention_heads
+        self.d_head = self.d_hidden // self.n_heads
 
-        self.query = nn.Linear(config.hidden_size, self.all_head_size)
-        self.key = nn.Linear(config.hidden_size, self.all_head_size)
-        self.value = nn.Linear(config.hidden_size, self.all_head_size)
+        self.query = nn.Linear(self.d_hidden, self.d_hidden)
+        self.key = nn.Linear(self.d_hidden, self.d_hidden)
+        self.value = nn.Linear(self.d_hidden, self.d_hidden)
 
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
@@ -250,14 +260,13 @@ class BertSelfAttention(nn.Module):
     @property
     def head_mask(self):
         if self._head_mask is None:
-            self._head_mask = torch.ones(self.num_attention_heads)
+            self._head_mask = torch.ones(self.n_heads)
             for head_idx in self.mask_heads:
                 self._head_mask[head_idx] = 0
-        return self._head_mask.view(1, self.num_attention_heads, 1, 1)
+        return self._head_mask.view(1, self.n_heads, 1, 1)
 
     def transpose_for_scores(self, x):
-        new_x_shape = x.size()[
-            :-1] + (self.num_attention_heads, self.attention_head_size)
+        new_x_shape = x.size()[:-1] + (self.n_heads, self.d_head)
         x = x.view(*new_x_shape)
         return x.permute(0, 2, 1, 3)
 
@@ -266,16 +275,18 @@ class BertSelfAttention(nn.Module):
         mixed_key_layer = self.key(hidden_states)
         mixed_value_layer = self.value(hidden_states)
 
+        # Add the "head" dimension
         query_layer = self.transpose_for_scores(mixed_query_layer)
         key_layer = self.transpose_for_scores(mixed_key_layer)
         value_layer = self.transpose_for_scores(mixed_value_layer)
 
-        # Take the dot product between "query" and "key" to get the raw attention scores.
+        # Take the dot product between "query" and "key" to get the raw
+        # attention scores.
         attention_scores = torch.matmul(
             query_layer, key_layer.transpose(-1, -2))
-        attention_scores = attention_scores / \
-            math.sqrt(self.attention_head_size)
-        # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
+        attention_scores = attention_scores / math.sqrt(self.d_head)
+        # Apply the attention mask
+        # (precomputed for all layers in BertModel forward() function)
         attention_scores = attention_scores + attention_mask
 
         # Normalize the attention scores to probabilities.
@@ -295,8 +306,7 @@ class BertSelfAttention(nn.Module):
         self.context_layer_val = context_layer
         self.context_layer_val.retain_grad()
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
-        new_context_layer_shape = context_layer.size()[
-            :-2] + (self.all_head_size,)
+        new_context_layer_shape = context_layer.size()[:-2] + (self.d_hidden,)
         context_layer = context_layer.view(*new_context_layer_shape)
         return context_layer, attention_probs
 
@@ -325,6 +335,41 @@ class BertAttention(nn.Module):
         self_output, attn = self.self(input_tensor, attention_mask)
         attention_output = self.output(self_output, input_tensor)
         return attention_output, attn
+
+    def reset_heads(self, heads, other=None):
+        device = next((self.self.parameters())).device
+        mask = torch.zeros(self.self.n_heads, self.self.d_head)
+        for head in heads:
+            mask[head] = 1
+        mask = mask.view(-1).contiguous().eq(1).to(device)
+        # Reinit query
+        interpolate_linear_layer(
+            self.self.query,
+            mask,
+            dim=-1,
+            other_layer=None if other is None else other.self.query,
+        )
+        # Reinit key
+        interpolate_linear_layer(
+            self.self.key,
+            mask,
+            dim=-1,
+            other_layer=None if other is None else other.self.key,
+        )
+        # Reinit value
+        interpolate_linear_layer(
+            self.self.value,
+            mask,
+            dim=-1,
+            other_layer=None if other is None else other.self.value,
+        )
+        # Reinit output
+        interpolate_linear_layer(
+            self.output.dense,
+            mask,
+            dim=0,
+            other_layer=None if other is None else other.output.dense,
+        )
 
 
 class BertIntermediate(nn.Module):
@@ -705,6 +750,13 @@ class BertModel(PreTrainedBertModel):
             self_att = self.encoder.layer[layer].attention.self
             self_att.mask_heads = list(heads)
             self_att._head_mask = None
+
+    def reset_heads(self, to_reset, other_bert=None):
+        other_layer = None
+        for layer, heads in to_reset.items():
+            if other_bert is not None:
+                other_layer = other_bert.encoder.layer[layer].attention
+            self.encoder.layer[layer].attention.reset_heads(heads, other_layer)
 
 
 class BertForPreTraining(PreTrainedBertModel):

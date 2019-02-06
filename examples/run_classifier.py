@@ -313,7 +313,6 @@ def main():
                 lr=args.retrain_learning_rate
             )
 
-        # TODO: refqctor
         for step, n_to_prune in enumerate(prune_sequence):
 
             if step == 0 or args.exact_pruning:
@@ -330,8 +329,8 @@ def main():
 
                 logger.info("Head importance scores")
                 for layer in range(len(head_importance)):
-                    layer_importance = head_importance[layer].cpu().data
-                    logger.info("\t".join(f"{x:.5f}" for x in layer_importance))
+                    layer_scores = head_importance[layer].cpu().data
+                    logger.info("\t".join(f"{x:.5f}" for x in layer_scores))
             # Determine which heads to prune
             to_prune = pruning.what_to_prune(
                 head_importance,
@@ -343,6 +342,18 @@ def main():
             model.bert.mask_heads(to_prune)
             # Maybe continue training a bit
             if args.n_retrain_steps_after_pruning > 0:
+                if args.retrain_pruned_heads_only:
+                    # Reload BERT
+                    base_bert = None
+                    if args.reinit_from_pretrained:
+                        base_bert = BertForSequenceClassification.from_pretrained(  # noqa
+                            args.bert_model,
+                            cache_dir=PYTORCH_PRETRAINED_BERT_CACHE /
+                            f"distributed_{args.local_rank}",
+                            num_labels=num_labels
+                        )
+                    # Reinit
+                    model.bert.reset_heads(to_prune, base_bert)
                 training.train(
                     train_data,
                     model,

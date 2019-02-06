@@ -200,6 +200,16 @@ def pruning_args(parser):
         help="Learning rate for retraining the network after pruning for a "
         "fixed number of steps"
     )
+    prune_group.add_argument(
+        "--retrain_pruned_heads_only",
+        action='store_true',
+        help="Retrain the pruned heads"
+    )
+    prune_group.add_argument(
+        "--reinit_from_pretrained",
+        action='store_true',
+        help="Reinitialize the pruned head from the pretrained model"
+    )
 
 
 def eval_args(parser):

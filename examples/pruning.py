@@ -97,14 +97,13 @@ def what_to_prune(
                 filtered_sorted_heads.insert(0, (layer, head))
         sorted_heads = filtered_sorted_heads
     # layer/heads that were already pruned
-    to_prune
+    to_prune = to_prune or {}
+    # Prune the lowest scoring heads
     sorted_heads = [
         (layer, head)
         for (layer, head) in sorted_heads
         if layer not in to_prune or head not in to_prune[layer]
     ]
-    # Prune the lowest scoring heads
-    to_prune = to_prune or {}
     # Update heads to prune
     for layer, head in sorted_heads[:n_to_prune]:
         if layer not in to_prune:
