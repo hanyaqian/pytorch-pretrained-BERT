@@ -322,6 +322,11 @@ def main():
                 lr=args.retrain_learning_rate
             )
         elif args.retrain_pruned_heads:
+            num_train_steps = int(
+                len(train_examples)
+                / args.train_batch_size
+                / args.gradient_accumulation_steps
+            ) * args.num_train_epochs
             head_grouped_parameters = {
                 'params':
                     [p for layer in model.bert.encoder.layer
@@ -400,7 +405,7 @@ def main():
                     args.train_batch_size,
                     gradient_accumulation_steps=args.gradient_accumulation_steps,  # noqa
                     device=device,
-                    verbose=False,
+                    verbose=True,
                     n_gpu=n_gpu,
                     global_step=0,
                     lr_schedule=lr_schedule,
@@ -409,6 +414,7 @@ def main():
                     fp16=args.fp16,
                     mask_heads_grad=to_prune,
                 )
+                to_prune = {}
 
             # Evaluate
             if args.eval_pruned:
