@@ -124,11 +124,14 @@ def main():
 
     # ==== SETUP EXPERIMENT ====
 
-    random.seed(args.seed)
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
-    if n_gpu > 0:
-        torch.cuda.manual_seed_all(args.seed)
+    def set_seeds(seed, n_gpu):
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        if n_gpu > 0:
+            torch.cuda.manual_seed_all(seed)
+
+    set_seeds(args.seed, n_gpu)
 
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -350,9 +353,12 @@ def main():
                             cache_dir=PYTORCH_PRETRAINED_BERT_CACHE /
                             f"distributed_{args.local_rank}",
                             num_labels=num_labels
-                        )
+                        ).bert
+                        base_bert.to(device)
                     # Reinit
                     model.bert.reset_heads(to_prune, base_bert)
+
+                set_seeds(args.seed + step, n_gpu)
                 training.train(
                     train_data,
                     model,
@@ -375,7 +381,7 @@ def main():
                     save_attention_probs=args.save_attention_probs,
                     print_head_entropy=True,
                     device=device,
-                    verbose=False,
+                    verbose=True,
                     scorer=processor.scorer,
                 )[metric]
                 logger.info("***** Pruning eval results *****")

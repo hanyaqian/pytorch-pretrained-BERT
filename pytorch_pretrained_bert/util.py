@@ -18,9 +18,9 @@ def interpolate_linear_layer(layer, mask, dim=-1, other_layer=None):
         if layer.bias is not None:
             b = copy_same_uniform(layer.bias)
     else:
-        W = other_layer.weight.clone()
+        W = other_layer.weight.clone().detach()
         if layer.bias is not None:
-            b = other_layer.bias.clone()
+            b = other_layer.bias.clone().detach()
     sizes = [1, 1]
     sizes[dim] = W.size(dim)
     weight_mask = mask.unsqueeze(dim).repeat(*sizes)
@@ -35,5 +35,5 @@ def interpolate_linear_layer(layer, mask, dim=-1, other_layer=None):
         layer.bias.requires_grad = False
         layer.bias.masked_fill_(mask, 0)
         b.masked_fill_(mask.eq(0), 0)
-        layer.weight += b
+        layer.bias += b
         layer.bias.requires_grad = True

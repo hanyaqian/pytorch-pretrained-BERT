@@ -160,7 +160,7 @@ def evaluate(
         util.print_2d_tensor(attn_distance)
 
         print("Head attention disagreement")
-        attn_disagreement /= tot_tokens.float()
+        attn_disagreement /= len(eval_data)
         util.print_1d_tensor(attn_disagreement)
 
         print("Head output disagreement")
