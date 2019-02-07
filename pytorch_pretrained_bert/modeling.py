@@ -761,9 +761,17 @@ class BertModel(PreTrainedBertModel):
             return encoded_layers, pooled_output
 
     def mask_heads(self, to_mask):
-        for layer, heads in to_mask.items():
+        for layer in range(len(self.encoder.layer)):
+            if layer in to_mask:
+                heads = to_mask[layer]
+                self_att = self.encoder.layer[layer].attention.self
+                self_att.mask_heads = list(heads)
+                self_att._head_mask = None
+
+    def clear_heads_mask(self):
+        for layer in range(len(self.encoder.layer)):
             self_att = self.encoder.layer[layer].attention.self
-            self_att.mask_heads = list(heads)
+            self_att.mask_heads = []
             self_att._head_mask = None
 
     def mask_heads_grad(self, to_mask):
