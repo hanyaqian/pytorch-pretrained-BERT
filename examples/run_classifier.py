@@ -330,9 +330,9 @@ def main():
             head_grouped_parameters = {
                 'params':
                     [p for layer in model.bert.encoder.layer
-                     for p in layer.attention.self.parameters()] +
+                        for p in layer.attention.self.parameters()] +
                     [p for layer in model.bert.encoder.layer
-                     for p in layer.attention.output.dense.parameters()],
+                        for p in layer.attention.output.dense.parameters()],
                 'weight_decay': 0.01
             }
             retrain_optimizer, lr_schedule = training.prepare_bert_adam(
@@ -366,7 +366,7 @@ def main():
             to_prune = pruning.what_to_prune(
                 head_importance,
                 n_to_prune,
-                to_prune=to_prune,
+                to_prune={} if args.retrain_pruned_heads else to_prune,
                 at_least_one_head_per_layer=args.at_least_one_head_per_layer
             )
             # Actually mask the heads
@@ -398,6 +398,8 @@ def main():
                 # Unmask heads
                 model.bert.mask_heads({})
                 # Retrain heads
+                # old_params = [(n, p.clone().detach())
+                #               for n, p in model.named_parameters()]
                 training.train(
                     train_data,
                     model,
@@ -414,7 +416,10 @@ def main():
                     fp16=args.fp16,
                     mask_heads_grad=to_prune,
                 )
-                to_prune = {}
+                # for (n1, p1), (n2, p2) in zip(model.named_parameters(), old_params):
+                #     if p1.ne(p2).any():
+                #         print(n1)
+                #         print(p1.ne(p2))
 
             # Evaluate
             if args.eval_pruned:

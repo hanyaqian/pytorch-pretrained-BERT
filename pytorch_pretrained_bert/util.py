@@ -45,6 +45,11 @@ def mask_grad_linear_layer(layer, mask, dim=-1):
     # Weight
     if layer.weight.grad is not None:
         layer.weight.grad.masked_fill_(weight_mask, 0)
+        # print(weight_mask)
+        # print(layer.weight.grad)
     # Bias
-    if layer.bias is not None and layer.bias.grad is not None and dim != 0:
-        layer.bias.grad.masked_fill_(mask, 0)
+    if layer.bias is not None and layer.bias.grad is not None:
+        if dim == 0:
+            layer.bias.grad.data.zero_()
+        else:
+            layer.bias.grad.data.masked_fill_(mask, 0)

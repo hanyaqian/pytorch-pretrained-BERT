@@ -24,6 +24,7 @@ def prepare_bert_adam(
     loss_scale=0,
     local_rank=-1,
     fp16=False,
+    sgd=False,
 ):
     """Set up the Adam variant for BERT and the learning rate scheduler"""
     # Prepare optimizer
@@ -51,12 +52,18 @@ def prepare_bert_adam(
         else:
             optimizer = FP16_Optimizer(optimizer, static_loss_scale=loss_scale)
     else:
-        optimizer = BertAdam(
-            optimizer_grouped_parameters,
-            lr=learning_rate,
-            warmup=warmup_proportion,
-            t_total=t_total
-        )
+        if sgd:
+            optimizer = torch.optim.SGD(
+                optimizer_grouped_parameters,
+                lr=learning_rate,
+            )
+        else:
+            optimizer = BertAdam(
+                optimizer_grouped_parameters,
+                lr=learning_rate,
+                warmup=warmup_proportion,
+                t_total=t_total
+            )
     # LR schedule
 
     def lr_schedule(global_step):
