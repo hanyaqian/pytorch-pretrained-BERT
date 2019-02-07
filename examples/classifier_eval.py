@@ -188,11 +188,9 @@ def calculate_head_importance(
     model.eval()
     # Device
     device = device or next(model.parameters()).device
-    n_prune_steps = int(np.ceil(
-        len(data)
-        / batch_size
-        * subset_size
-    ))
+    if subset_size <= 1:
+        subset_size *= len(data)
+    n_prune_steps = int(np.ceil(int(subset_size) / batch_size))
     if verbose:
         logger.info("***** Calculating head importance *****")
         logger.info(f"  Num examples = {len(data)}")

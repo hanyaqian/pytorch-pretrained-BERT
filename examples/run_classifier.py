@@ -322,28 +322,14 @@ def main():
                 lr=args.retrain_learning_rate
             )
         elif args.retrain_pruned_heads:
-            num_train_steps = int(
-                len(train_examples)
-                / args.train_batch_size
-                / args.gradient_accumulation_steps
-            ) * args.num_train_epochs
-            head_grouped_parameters = {
-                'params':
-                    [p for layer in model.bert.encoder.layer
-                        for p in layer.attention.self.parameters()] +
-                    [p for layer in model.bert.encoder.layer
-                        for p in layer.attention.output.dense.parameters()],
-                'weight_decay': 0.01
-            }
-            retrain_optimizer, lr_schedule = training.prepare_bert_adam(
-                [head_grouped_parameters],
-                args.learning_rate,
-                num_train_steps,
-                args.warmup_proportion,
-                loss_scale=args.loss_scale,
-                local_rank=args.local_rank,
-                fp16=args.fp16,
-            )
+            if args.n_retrain_steps_pruned_heads > 0:
+                num_retrain_steps = args.n_retrain_steps_pruned_heads
+            else:
+                num_retrain_steps = int(
+                    len(train_examples)
+                    / args.train_batch_size
+                    / args.gradient_accumulation_steps
+                ) * args.num_train_epochs
 
         for step, n_to_prune in enumerate(prune_sequence):
 
@@ -400,6 +386,23 @@ def main():
                 # Retrain heads
                 # old_params = [(n, p.clone().detach())
                 #               for n, p in model.named_parameters()]
+                head_grouped_parameters = {
+                    'params':
+                        [p for layer in model.bert.encoder.layer
+                            for p in layer.attention.self.parameters()] +
+                        [p for layer in model.bert.encoder.layer
+                            for p in layer.attention.output.dense.parameters()],
+                    'weight_decay': 0.01
+                }
+                retrain_optimizer, lr_schedule = training.prepare_bert_adam(
+                    [head_grouped_parameters],
+                    args.learning_rate,
+                    num_retrain_steps,
+                    args.warmup_proportion,
+                    loss_scale=args.loss_scale,
+                    local_rank=args.local_rank,
+                    fp16=args.fp16,
+                )
                 training.train(
                     train_data,
                     model,
@@ -415,6 +418,7 @@ def main():
                     local_rank=args.local_rank,
                     fp16=args.fp16,
                     mask_heads_grad=to_prune,
+                    n_steps=num_retrain_steps,
                 )
                 # for (n1, p1), (n2, p2) in zip(model.named_parameters(), old_params):
                 #     if p1.ne(p2).any():

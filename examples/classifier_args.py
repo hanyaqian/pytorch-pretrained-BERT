@@ -206,6 +206,12 @@ def pruning_args(parser):
         help="Retrain the pruned heads"
     )
     prune_group.add_argument(
+        "--n_retrain_steps_pruned_heads",
+        type=int,
+        default=0,
+        help="Retrain the pruned heads"
+    )
+    prune_group.add_argument(
         "--reinit_from_pretrained",
         action='store_true',
         help="Reinitialize the pruned head from the pretrained model"
