@@ -419,6 +419,7 @@ def main():
                     fp16=args.fp16,
                     mask_heads_grad=to_prune,
                     n_steps=num_retrain_steps,
+                    eval_mode=args.no_dropout_in_retraining,
                 )
 
             # Evaluate

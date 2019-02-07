@@ -48,4 +48,13 @@ then
     run_train
 fi
 
-base_acc=$(run_eval "" | grep eval_accuracy | rev | cut -d" " -f1 | rev)
+metric="eval_accuracy"
+if [ $TASK == "CoLA" ]
+then
+    metric="Matthew"
+elif [ $TASK == "MRPC" ]
+then
+    metric="F1"
+fi
+
+base_acc=$(run_eval "" | grep $metric | rev | cut -d" " -f1 | rev)

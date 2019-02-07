@@ -221,6 +221,11 @@ def pruning_args(parser):
         action='store_true',
         help="Reinitialize the pruned head from the pretrained model"
     )
+    prune_group.add_argument(
+        "--no_dropout_in_retraining",
+        action='store_true',
+        help="Disable dropout when retraining heads"
+    )
 
 
 def eval_args(parser):
