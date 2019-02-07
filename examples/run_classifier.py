@@ -384,7 +384,7 @@ def main():
                 # Reinit
                 model.bert.reset_heads(to_prune, base_bert)
                 # Unmask heads
-                model.bert.mask_heads({})
+                model.bert.clear_heads_mask()
                 head_grouped_parameters = {
                     'params':
                         [p for layer in model.bert.encoder.layer
