@@ -94,6 +94,11 @@ def get_base_parser():
         help="Print data examples"
     )
     parser.add_argument(
+        "--no-progress-bars",
+        action='store_true',
+        help="Disable progress bars"
+    )
+    parser.add_argument(
         "--feature_mode",
         action='store_true',
         help="Don't update the BERT weights."

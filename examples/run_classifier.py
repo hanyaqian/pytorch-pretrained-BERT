@@ -263,6 +263,7 @@ def main():
             gradient_accumulation_steps=args.gradient_accumulation_steps,
             device=device,
             verbose=True,
+            disable_progress_bar=args.no_progress_bars,
             n_gpu=n_gpu,
             global_step=global_step,
             lr_schedule=lr_schedule,
@@ -343,6 +344,7 @@ def main():
                     normalize_scores_by_layer=args.normalize_pruning_by_layer,
                     subset_size=args.compute_head_importance_on_subset,
                     verbose=False,
+                    disable_progress_bar=args.no_progress_bars,
                 )
                 logger.info("Head importance scores")
                 for layer in range(len(head_importance)):
@@ -383,15 +385,12 @@ def main():
                 model.bert.reset_heads(to_prune, base_bert)
                 # Unmask heads
                 model.bert.mask_heads({})
-                # Retrain heads
-                # old_params = [(n, p.clone().detach())
-                #               for n, p in model.named_parameters()]
                 head_grouped_parameters = {
                     'params':
                         [p for layer in model.bert.encoder.layer
-                            for p in layer.attention.self.parameters()] +
+                         for p in layer.attention.self.parameters()] +
                         [p for layer in model.bert.encoder.layer
-                            for p in layer.attention.output.dense.parameters()],
+                         for p in layer.attention.output.dense.parameters()],
                     'weight_decay': 0.01
                 }
                 retrain_optimizer, lr_schedule = training.prepare_bert_adam(
@@ -411,6 +410,7 @@ def main():
                     gradient_accumulation_steps=args.gradient_accumulation_steps,  # noqa
                     device=device,
                     verbose=True,
+                    disable_progress_bar=args.no_progress_bars,
                     n_gpu=n_gpu,
                     global_step=0,
                     lr_schedule=lr_schedule,
@@ -420,10 +420,6 @@ def main():
                     mask_heads_grad=to_prune,
                     n_steps=num_retrain_steps,
                 )
-                # for (n1, p1), (n2, p2) in zip(model.named_parameters(), old_params):
-                #     if p1.ne(p2).any():
-                #         print(n1)
-                #         print(p1.ne(p2))
 
             # Evaluate
             if args.eval_pruned:
@@ -440,6 +436,7 @@ def main():
                     print_head_entropy=True,
                     device=device,
                     verbose=True,
+                    disable_progress_bar=args.no_progress_bars,
                     scorer=processor.scorer,
                 )[metric]
                 logger.info("***** Pruning eval results *****")
@@ -456,6 +453,7 @@ def main():
             print_head_entropy=True,
             device=device,
             result=result,
+            disable_progress_bar=args.no_progress_bars,
             scorer=processor.scorer,
         )
         output_eval_file = os.path.join(args.output_dir, "eval_results.txt")
@@ -490,6 +488,7 @@ def main():
             model,
             args.eval_batch_size,
             verbose=True,
+            disable_progress_bar=args.no_progress_bars,
             device=device,
         )
         report = analyze_nli(anal_examples, predictions, label_list)

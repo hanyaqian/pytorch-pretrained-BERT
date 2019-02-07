@@ -23,6 +23,7 @@ def evaluate(
         device=None,
         result=None,
         verbose=True,
+        disable_progress_bar=False,
         scorer=None,
 ):
     """Evaluate the model's accuracy"""
@@ -61,7 +62,7 @@ def evaluate(
     all_predicitions = []
     all_labels = []
     eval_iterator = tqdm(
-        eval_dataloader, desc="Evaluating", disable=not verbose)
+        eval_dataloader, desc="Evaluating", disable=disable_progress_bar)
     for input_ids, input_mask, segment_ids, label_ids in eval_iterator:
         input_ids = input_ids.to(device)
         input_mask = input_mask.to(device)
@@ -181,6 +182,7 @@ def calculate_head_importance(
         device=None,
         normalize_scores_by_layer=True,
         verbose=True,
+        disable_progress_bar=False,
         subset_size=1.0,
 ):
     """Calculate head importance scores"""
@@ -204,8 +206,12 @@ def calculate_head_importance(
         sampler=sampler,
         batch_size=batch_size
     ), n_prune_steps)
-    prune_iterator = tqdm(dataloader, desc="Iteration",
-                          disable=not verbose, total=n_prune_steps)
+    prune_iterator = tqdm(
+        dataloader,
+        desc="Iteration",
+        disable=disable_progress_bar,
+        total=n_prune_steps
+    )
     # Head importance tensor
     n_layers = model.bert.config.num_hidden_layers
     n_heads = model.bert.config.num_attention_heads
@@ -243,6 +249,7 @@ def predict(
     predict_batch_size,
     device=None,
     verbose=True,
+    disable_progress_bar=False,
 ):
     """Predict labels on a dataset"""
 
@@ -260,7 +267,10 @@ def predict(
     device = device or next(model.parameters()).device
 
     predict_iterator = tqdm(
-        predict_dataloader, desc="Analizing", disable=not verbose)
+        predict_dataloader,
+        desc="Predicting labels",
+        disable=disable_progress_bar
+    )
 
     # Compute model predictions
     predictions = []

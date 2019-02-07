@@ -81,6 +81,7 @@ def train(
     gradient_accumulation_steps=1,
     device=None,
     verbose=False,
+    disable_progress_bar=False,
     n_gpu=0,
     global_step=0,
     lr_schedule=None,
@@ -89,6 +90,7 @@ def train(
     n_steps=None,
     fp16=False,
     mask_heads_grad=None,
+    eval_mode=False,
 ):
     """Train for a fixed number of steps/epochs"""
     # Device
@@ -121,12 +123,10 @@ def train(
         logger.info(f"  Num examples = {len(train_data)}")
         logger.info(f"  Batch size = {train_batch_size}")
         logger.info(f"  Num steps = {n_steps}")
-    # Training mode let's go
-    model.train()
     n_remaining_steps = n_steps
     tr_loss = nb_tr_steps = 0
     # Iterate over epochs
-    for _ in trange(int(n_epochs), desc="Epoch"):
+    for _ in trange(int(n_epochs), desc="Epoch", disable=disable_progress_bar):
         # Check whether we are doing the full epoch or not
         full_epoch = n_remaining_steps >= n_steps_per_epochs
         # Run the epoch
@@ -138,12 +138,13 @@ def train(
             global_step=global_step,
             lr_schedule=lr_schedule,
             device=device,
-            verbose=verbose,
+            disable_progress_bar=disable_progress_bar,
             n_gpu=n_gpu,
             gradient_accumulation_steps=gradient_accumulation_steps,
             fp16=fp16,
             n_steps=n_remaining_steps if not full_epoch else None,
             mask_heads_grad=mask_heads_grad,
+            eval_mode=eval_mode,
         )
         # Update total loss / nb of steps
         tr_loss += epoch_tr_loss
@@ -167,28 +168,33 @@ def train_epoch(
     global_step=0,
     lr_schedule=None,
     device=None,
-    verbose=True,
+    disable_progress_bar=False,
     n_gpu=0,
     gradient_accumulation_steps=1,
     fp16=False,
     n_steps=None,
     mask_heads_grad=None,
+    eval_mode=False,
 ):
     """Train for one epoch (or a fixed number of steps)"""
     # Device
     device = device or next(model.parameters()).device
-    model.train()
-    tr_loss = 0
-    nb_tr_examples, nb_tr_steps = 0, 0
+    # Training mode let's go
+    if eval_mode:
+        model.eval()
+    else:
+        model.train()
     # Iterator
     if n_steps is not None:
         train_dataloader = islice(train_dataloader, n_steps)
     train_iterator = tqdm(
         train_dataloader,
         desc="Iteration",
-        disable=not verbose,
+        disable=disable_progress_bar,
         total=n_steps,
     )
+    tr_loss = 0
+    nb_tr_examples, nb_tr_steps = 0, 0
     for step, batch in enumerate(train_iterator):
         batch = tuple(t.to(device) for t in batch)
         input_ids, input_mask, segment_ids, label_ids = batch
