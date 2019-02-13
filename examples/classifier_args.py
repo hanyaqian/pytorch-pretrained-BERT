@@ -103,6 +103,17 @@ def get_base_parser():
         action='store_true',
         help="Don't update the BERT weights."
     )
+    parser.add_argument(
+        "--toy_classifier",
+        action='store_true',
+        help="Toy classifier"
+    )
+    parser.add_argument(
+        "--toy_classifier_n_heads",
+        default=1,
+        type=int,
+        help="Number of heads in the simple (non-BERT) sequence classifier"
+    )
     return parser
 
 

@@ -188,21 +188,61 @@ def main():
 
     # ==== PREPARE MODEL ====
 
-    if args.dry_run:
-        model = BertForSequenceClassification(
-            BertConfig.dummy_config(len(tokenizer.vocab)),
-            num_labels=num_labels
-        )
-    else:
-        model = BertForSequenceClassification.from_pretrained(
-            args.bert_model,
-            cache_dir=PYTORCH_PRETRAINED_BERT_CACHE /
-            f"distributed_{args.local_rank}",
-            num_labels=num_labels
-        )
+    def get_model(
+        model_type,
+        dry_run=False,
+        n_heads=1,
+        state_dict=None,
+        cache_dir=None
+    ):
+
+        if dry_run:
+            model = BertForSequenceClassification(
+                BertConfig.dummy_config(len(tokenizer.vocab)),
+                num_labels=num_labels
+            )
+        elif model_type == "toy":
+            config = BertConfig(
+                len(tokenizer.vocab),
+                hidden_size=768,
+                num_hidden_layers=1,
+                num_attention_heads=n_heads,
+                intermediate_size=3072,
+                hidden_act="gelu",
+                hidden_dropout_prob=0.1,
+                attention_probs_dropout_prob=0.1,
+                max_position_embeddings=512,
+                type_vocab_size=2,
+                initializer_range=0.02
+            )
+            model = BertForSequenceClassification(
+                config,
+                num_labels=num_labels
+            )
+            if state_dict is not None:
+                model_to_load = getattr(model, "module", model)
+                model_to_load.load_state_dict(state_dict)
+        else:
+            model = BertForSequenceClassification.from_pretrained(
+                model_type,
+                cache_dir=cache_dir,
+                num_labels=num_labels,
+                state_dict=state_dict,
+            )
+
+        return model
+
+    model = get_model(
+        "toy" if args.toy_classifier else args.bert_model,
+        dry_run=args.dry_run,
+        n_heads=args.toy_classifier_n_heads,
+        cache_dir=PYTORCH_PRETRAINED_BERT_CACHE /
+        f"distributed_{args.local_rank}",
+    )
     # Head dropout
     for layer in model.bert.encoder.layer:
         layer.attention.self.dropout.p = args.attn_dropout
+
     if args.fp16:
         model.half()
     model.to(device)
@@ -288,13 +328,13 @@ def main():
 
     # Load a trained model that you have fine-tuned
     model_state_dict = torch.load(output_model_file)
-    if not args.dry_run:
-        model = BertForSequenceClassification.from_pretrained(
-            args.bert_model,
-            state_dict=model_state_dict,
-            num_labels=num_labels
-        )
-        model.to(device)
+    model = get_model(
+        "toy" if args.toy_classifier else args.bert_model,
+        dry_run=args.dry_run,
+        n_heads=args.toy_classifier_n_heads,
+        state_dict=model_state_dict,
+    )
+    model.to(device)
 
     is_main = args.local_rank == -1 or torch.distributed.get_rank() == 0
 
