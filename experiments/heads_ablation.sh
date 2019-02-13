@@ -16,7 +16,7 @@ do
     for head in `seq 1 12`
     do
         mask_str="${layer}:${head}"
-        acc=$(run_eval "--attention_mask_heads $mask_str $OPTIONS" | grep eval_accuracy | rev | cut -d" " -f1 | rev)
+        acc=$(run_eval "--attention_mask_heads $mask_str $OPTIONS" | grep $metric | rev | cut -d" " -f1 | rev)
         printf " & %.5f" $(echo "$acc - $base_acc" | bc )
     done
     echo " \\\\"

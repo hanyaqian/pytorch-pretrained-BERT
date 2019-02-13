@@ -3,6 +3,7 @@ from itertools import islice
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 
 from logger import logger
@@ -167,6 +168,7 @@ def evaluate(
         print("Head output disagreement")
         out_disagreement /= tot_tokens.float()
         util.print_1d_tensor(out_disagreement)
+        
 
     if save_attention_probs != "":
         torch.save(attns_to_save,
@@ -231,13 +233,15 @@ def calculate_head_importance(
             grad_ctx = ctx.grad
             # Take the dot
             dot = torch.einsum("bhli,bhlj->bhl", [grad_ctx, ctx])
-            head_importance[layer] += dot.abs().sum(-1).sum(0).detach()
+            head_importance[layer] += dot.sum(-1).abs().sum(0).detach()
 
         tot_tokens += input_mask.float().detach().sum().data
-    head_importance /= tot_tokens
+    head_importance[:-1] /= tot_tokens
+    head_importance[-1] /= subset_size
     # Layerwise importance normalization
     if normalize_scores_by_layer:
-        norm_by_layer = (head_importance ** 2).sum(-1).sqrt()
+        exponent = 2
+        norm_by_layer = torch.pow(torch.pow(head_importance, exponent).sum(-1), 1/exponent)
         head_importance /= norm_by_layer.unsqueeze(-1) + 1e-20
 
     return head_importance

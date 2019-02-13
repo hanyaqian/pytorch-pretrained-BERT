@@ -200,6 +200,9 @@ def main():
             f"distributed_{args.local_rank}",
             num_labels=num_labels
         )
+    # Head dropout
+    for layer in model.bert.encoder.layer:
+        layer.attention.self.dropout.p = args.attn_dropout
     if args.fp16:
         model.half()
     model.to(device)
@@ -332,6 +335,7 @@ def main():
                     / args.gradient_accumulation_steps
                 ) * args.num_train_epochs
 
+        to_prune = {}
         for step, n_to_prune in enumerate(prune_sequence):
 
             if step == 0 or args.exact_pruning:
@@ -343,7 +347,7 @@ def main():
                     device=device,
                     normalize_scores_by_layer=args.normalize_pruning_by_layer,
                     subset_size=args.compute_head_importance_on_subset,
-                    verbose=False,
+                    verbose=True,
                     disable_progress_bar=args.no_progress_bars,
                 )
                 logger.info("Head importance scores")
@@ -361,7 +365,7 @@ def main():
             model.bert.mask_heads(to_prune)
             # Maybe continue training a bit
             if args.n_retrain_steps_after_pruning > 0:
-                set_seeds(args.seed + step, n_gpu)
+                set_seeds(args.seed + step + 1, n_gpu)
                 training.train(
                     train_data,
                     model,
@@ -371,6 +375,7 @@ def main():
                     device=device,
                 )
             elif args.retrain_pruned_heads:
+                set_seeds(args.seed + step + 1, n_gpu)
                 # Reload BERT
                 base_bert = None
                 if args.reinit_from_pretrained:
@@ -385,10 +390,19 @@ def main():
                 model.bert.reset_heads(to_prune, base_bert)
                 # Unmask heads
                 model.bert.clear_heads_mask()
+                if args.only_retrain_val_out:
+                    self_att_params = [
+                        p for layer in model.bert.encoder.layer
+                        for p in layer.attention.self.value.parameters()
+                    ]
+                else:
+                    self_att_params = [
+                        p for layer in model.bert.encoder.layer
+                        for p in layer.attention.self.parameters()
+                    ]
                 head_grouped_parameters = {
                     'params':
-                        [p for layer in model.bert.encoder.layer
-                         for p in layer.attention.self.parameters()] +
+                        self_att_params +
                         [p for layer in model.bert.encoder.layer
                          for p in layer.attention.output.dense.parameters()],
                     'weight_decay': 0.01

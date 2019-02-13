@@ -3,12 +3,18 @@
 TASK=$1
 TRAIN_OPTIONS="${@:2}"
 FEATURE_MODE=${FEATURE_MODE:-0}
+NODROP_MODE=${NODROP_MODE:-0}
 
 prefix="$TASK"
 if [ "$FEATURE_MODE" -eq "1" ]
 then
     prefix="${TASK}-feature"
     TRAIN_OPTIONS="$TRAIN_OPTIONS --feature_mode"
+fi
+if [ "$NODROP_MODE" -eq "1" ]
+then
+    prefix="${TASK}-nodrop"
+    TRAIN_OPTIONS="$TRAIN_OPTIONS --attn_dropout 0.0"
 fi
 
 mkdir -p models
@@ -54,7 +60,7 @@ then
     metric="Matthew"
 elif [ $TASK == "MRPC" ]
 then
-    metric="F1"
+    metric="F-1"
 fi
 
 base_acc=$(run_eval "" | grep $metric | rev | cut -d" " -f1 | rev)

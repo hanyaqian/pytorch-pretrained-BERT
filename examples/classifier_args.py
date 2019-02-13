@@ -121,6 +121,12 @@ def training_args(parser):
         help="The initial learning rate for Adam."
     )
     train_group.add_argument(
+        "--attn_dropout",
+        default=0.1,
+        type=float,
+        help="Head dropout rate"
+    )
+    train_group.add_argument(
         "--num_train_epochs",
         default=3.0,
         type=float,
@@ -226,6 +232,11 @@ def pruning_args(parser):
         action='store_true',
         help="Disable dropout when retraining heads"
     )
+    prune_group.add_argument(
+        "--only_retrain_val_out",
+        action='store_true',
+        help="Only retrain the value and output layers for attention heads"
+    )
 
 
 def eval_args(parser):
@@ -237,11 +248,11 @@ def eval_args(parser):
         help="Total batch size for eval."
     )
     eval_group.add_argument(
-        "--attention-mask-heads", default="", type=str, nargs="*",
+        "--attention_mask_heads", default="", type=str, nargs="*",
         help="[layer]:[head1],[head2]..."
     )
     eval_group.add_argument(
-        '--reverse-head-mask',
+        '--reverse_head_mask',
         action='store_true',
         help="Mask all heads except those specified by "
         "`--attention-mask-heads`"

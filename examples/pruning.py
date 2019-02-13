@@ -1,3 +1,4 @@
+from math import sqrt
 from logger import logger
 
 
@@ -74,8 +75,15 @@ def what_to_prune(
     n_to_prune,
     to_prune=None,
     at_least_one_head_per_layer=True,
+    rescale_by_number=False,
 ):
+    head_importance = head_importance.clone()
     n_layers, n_heads = head_importance.size()
+    to_prune = to_prune or {}
+    if rescale_by_number:
+        for layer in to_prune:
+            #head_importance[layer] *= sqrt(n_layers / len(to_prune[layer]))
+            head_importance[layer] *= sqrt(len(to_prune[layer]) / n_layers)
     # Sort heads by score
     heads_and_score = [
         ((layer, head), head_importance[layer, head])
@@ -97,7 +105,6 @@ def what_to_prune(
                 filtered_sorted_heads.insert(0, (layer, head))
         sorted_heads = filtered_sorted_heads
     # layer/heads that were already pruned
-    to_prune = to_prune or {}
     # Prune the lowest scoring heads
     sorted_heads = [
         (layer, head)
