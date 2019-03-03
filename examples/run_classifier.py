@@ -95,7 +95,7 @@ def main():
         )
     out_dir_exists = os.path.exists(args.output_dir) and \
         os.listdir(args.output_dir)
-    if out_dir_exists and args.do_train:
+    if out_dir_exists and args.do_train and not args.overwrite:
         raise ValueError(
             f"Output directory ({args.output_dir}) already exists and is not "
             "empty."
@@ -190,6 +190,7 @@ def main():
 
     def get_model(
         model_type,
+        toy_classifier=False,
         dry_run=False,
         n_heads=1,
         state_dict=None,
@@ -201,7 +202,14 @@ def main():
                 BertConfig.dummy_config(len(tokenizer.vocab)),
                 num_labels=num_labels
             )
-        elif model_type == "toy":
+        else:
+            model = BertForSequenceClassification.from_pretrained(
+                model_type,
+                cache_dir=cache_dir,
+                num_labels=num_labels,
+                state_dict=None if toy_classifier else state_dict,
+            )
+        if toy_classifier:
             config = BertConfig(
                 len(tokenizer.vocab),
                 hidden_size=768,
@@ -215,25 +223,21 @@ def main():
                 type_vocab_size=2,
                 initializer_range=0.02
             )
-            model = BertForSequenceClassification(
+            toy_model = BertForSequenceClassification(
                 config,
                 num_labels=num_labels
             )
+            toy_model.bert.embeddings.load_state_dict(model.bert.embeddings.state_dict())
             if state_dict is not None:
-                model_to_load = getattr(model, "module", model)
+                model_to_load = getattr(toy_model, "module", toy_model)
                 model_to_load.load_state_dict(state_dict)
-        else:
-            model = BertForSequenceClassification.from_pretrained(
-                model_type,
-                cache_dir=cache_dir,
-                num_labels=num_labels,
-                state_dict=state_dict,
-            )
+            model = toy_model
 
         return model
 
     model = get_model(
-        "toy" if args.toy_classifier else args.bert_model,
+        args.bert_model,
+        toy_classifier=args.toy_classifier,
         dry_run=args.dry_run,
         n_heads=args.toy_classifier_n_heads,
         cache_dir=PYTORCH_PRETRAINED_BERT_CACHE /
@@ -258,6 +262,14 @@ def main():
         model = DDP(model)
     elif n_gpu > 1:
         model = torch.nn.DataParallel(model)
+
+    # Parse pruning descriptor
+    to_prune = pruning.parse_head_pruning_descriptors(
+        args.attention_mask_heads,
+        reverse_descriptors=args.reverse_head_mask,
+    )
+    # Mask heads
+    model.bert.mask_heads(to_prune)
 
     # ==== PREPARE TRAINING ====
 
@@ -329,7 +341,8 @@ def main():
     # Load a trained model that you have fine-tuned
     model_state_dict = torch.load(output_model_file)
     model = get_model(
-        "toy" if args.toy_classifier else args.bert_model,
+        args.bert_model,
+        toy_classifier=args.toy_classifier,
         dry_run=args.dry_run,
         n_heads=args.toy_classifier_n_heads,
         state_dict=model_state_dict,
@@ -357,7 +370,7 @@ def main():
             args.prune_percent,
             model.bert.config.num_hidden_layers,
             model.bert.config.num_attention_heads,
-            args.at_least_one_head_per_layer,
+            args.at_least_x_heads_per_layer,
         )
         # Prepare optimizer for tuning after pruning
         if args.n_retrain_steps_after_pruning > 0:
@@ -399,7 +412,7 @@ def main():
                 head_importance,
                 n_to_prune,
                 to_prune={} if args.retrain_pruned_heads else to_prune,
-                at_least_one_head_per_layer=args.at_least_one_head_per_layer
+                at_least_x_heads_per_layer=args.at_least_x_heads_per_layer
             )
             # Actually mask the heads
             model.bert.mask_heads(to_prune)

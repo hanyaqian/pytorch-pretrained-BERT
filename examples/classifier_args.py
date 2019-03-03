@@ -109,6 +109,11 @@ def get_base_parser():
         help="Toy classifier"
     )
     parser.add_argument(
+        "--overwrite",
+        action='store_true',
+        help="Don't raise an error when the output dir exists"
+    )
+    parser.add_argument(
         "--toy_classifier_n_heads",
         default=1,
         type=int,
@@ -190,14 +195,20 @@ def pruning_args(parser):
         help="Number of heads to prune. Overrides `--prune_percent`"
     )
     prune_group.add_argument(
+        "--prune_reverse_order",
+        action='store_true',
+        help="Prune in reverse order of importance",
+    )
+    prune_group.add_argument(
         "--normalize_pruning_by_layer",
         action='store_true',
         help="Normalize importance score by layers for pruning"
     )
     prune_group.add_argument(
-        "--at_least_one_head_per_layer",
-        action='store_true',
-        help="Keep at least one attention head per layer"
+        "--at_least_x_heads_per_layer",
+        type=int,
+        default=0,
+        help="Keep at least x attention heads per layer"
     )
     prune_group.add_argument(
         "--exact_pruning",

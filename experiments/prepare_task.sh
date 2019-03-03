@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 TASK=$1
+EVAL=${EVAL:-"1"}
 TRAIN_OPTIONS="${@:2}"
 FEATURE_MODE=${FEATURE_MODE:-0}
 NODROP_MODE=${NODROP_MODE:-0}
@@ -63,4 +64,7 @@ then
     metric="F-1"
 fi
 
-base_acc=$(run_eval "" | grep $metric | rev | cut -d" " -f1 | rev)
+if [ "$EVAL" = "1" ]
+then
+    base_acc=$(run_eval "" | grep $metric | rev | cut -d" " -f1 | rev)
+fi

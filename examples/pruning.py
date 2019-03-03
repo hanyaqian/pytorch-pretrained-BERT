@@ -29,7 +29,7 @@ def parse_head_pruning_descriptors(
 
 def to_pruning_descriptor(to_prune):
     """Inverse of parse_head_pruning_descriptors"""
-    descriptors = [f"{layer}:{','.join(str(head) for head in heads)}"
+    descriptors = [f"{layer+1}:{','.join(str(head+1) for head in heads)}"
                    for layer, heads in to_prune.items()]
     return " ".join(descriptors)
 
@@ -39,7 +39,7 @@ def determine_pruning_sequence(
     prune_percents,
     n_heads,
     n_layers,
-    at_least_one_head_per_layer=True,
+    at_least_x_heads_per_layer=0,
 ):
     all_n_to_prune = prune_numbers
     if all_n_to_prune is None:
@@ -49,15 +49,18 @@ def determine_pruning_sequence(
             total_heads = n_heads * n_layers
             n_to_prune = int(total_heads * prune_percent / 100)
             # Make sure we keep at least one head per layer
-            if at_least_one_head_per_layer:
-                if n_to_prune > total_heads - n_layers:
+            if at_least_x_heads_per_layer > 0:
+                if n_to_prune > total_heads - at_least_x_heads_per_layer * n_layers:
                     logger.warn(
                         f"Can't prune {prune_percent}% ({n_to_prune})"
-                        " heads AND keep at least 1 head per layer. Will"
-                        f" prune only {(1-n_layers/total_heads)*100:.1f} "
+                        f" heads AND keep at least {at_least_x_heads_per_layer}"
+                        " head(s) per layer. Will"
+                        f" prune only {(1-(at_least_x_heads_per_layer*n_layers)/total_heads)*100:.1f} "
                         f"({total_heads-n_layers}) heads instead"
                     )
-                    n_to_prune = total_heads - n_layers
+                    n_to_prune = total_heads - at_least_x_heads_per_layer * n_layers
+                    all_n_to_prune.append(n_to_prune)
+                    break
             all_n_to_prune.append(n_to_prune)
 
     # We'll incrementally prune layers and evaluate
@@ -74,7 +77,7 @@ def what_to_prune(
     head_importance,
     n_to_prune,
     to_prune=None,
-    at_least_one_head_per_layer=True,
+    at_least_x_heads_per_layer=0,
     rescale_by_number=False,
 ):
     head_importance = head_importance.clone()
@@ -94,15 +97,18 @@ def what_to_prune(
     sorted_heads = [head_and_score[0]
                     for head_and_score in heads_and_score]
     # Ensure we don't delete all heads in a layer
-    if at_least_one_head_per_layer:
+    if at_least_x_heads_per_layer:
         # Remove the top scoring head in each layer
-        has_at_least_one_head = set()
+        to_protect = {l: 0 for l in range(n_layers)}
         filtered_sorted_heads = []
         for layer, head in reversed(sorted_heads):
-            if layer not in has_at_least_one_head:
-                has_at_least_one_head.add(layer)
-            else:
-                filtered_sorted_heads.insert(0, (layer, head))
+            if layer in to_protect:
+                if to_protect[layer] < at_least_x_heads_per_layer:
+                    to_protect[layer] += 1
+                    continue
+                else:
+                    to_protect.pop(layer)
+            filtered_sorted_heads.insert(0, (layer, head))
         sorted_heads = filtered_sorted_heads
     # layer/heads that were already pruned
     # Prune the lowest scoring heads

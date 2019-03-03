@@ -232,8 +232,8 @@ def calculate_head_importance(
             ctx = self_att.context_layer_val
             grad_ctx = ctx.grad
             # Take the dot
-            dot = torch.einsum("bhli,bhlj->bhl", [grad_ctx, ctx])
-            head_importance[layer] += dot.sum(-1).abs().sum(0).detach()
+            dot = torch.einsum("bhli,bhli->bhl", [grad_ctx, ctx])
+            head_importance[layer] += dot.abs().sum(-1).sum(0).detach()
 
         tot_tokens += input_mask.float().detach().sum().data
     head_importance[:-1] /= tot_tokens
