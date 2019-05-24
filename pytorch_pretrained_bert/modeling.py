@@ -29,7 +29,7 @@ from torch import nn
 from torch.nn import CrossEntropyLoss
 
 from .file_utils import cached_path
-from .util import interpolate_linear_layer, mask_grad_linear_layer
+from .util import interpolate_linear_layer, mask_grad_linear_layer, prune_linear_layer
 
 logger = logging.getLogger(__name__)
 
@@ -335,6 +335,22 @@ class BertAttention(nn.Module):
         self_output, attn = self.self(input_tensor, attention_mask)
         attention_output = self.output(self_output, input_tensor)
         return attention_output, attn
+
+    def prune_heads(self, heads):
+        device = next((self.self.parameters())).device
+        mask = torch.ones(self.self.n_heads, self.self.d_head)
+        for head in heads:
+            mask[head] = 0
+        mask = mask.view(-1).contiguous().eq(1).to(device)
+        dims = torch.arange(len(mask)).to(device)[mask].long()
+        # Change linear layers
+        self.self.query = prune_linear_layer(self.self.query, dims)
+        self.self.key = prune_linear_layer(self.self.key, dims)
+        self.self.value = prune_linear_layer(self.self.value, dims)
+        self.output.dense = prune_linear_layer(self.output.dense, dims, dim=0)
+        # change hyper params
+        self.self.n_heads = self.self.n_heads - len(heads)
+        self.self.d_hidden = self.self.d_head * self.self.n_heads
 
     def reset_heads(self, heads, other=None):
         device = next((self.self.parameters())).device
@@ -767,6 +783,13 @@ class BertModel(PreTrainedBertModel):
                 self_att = self.encoder.layer[layer].attention.self
                 self_att.mask_heads = list(heads)
                 self_att._head_mask = None
+    
+    def prune_heads(self, to_mask):
+        for layer in range(len(self.encoder.layer)):
+            if layer in to_mask:
+                heads = to_mask[layer]
+                att = self.encoder.layer[layer].attention
+                att.prune_heads(to_mask)
 
     def clear_heads_mask(self):
         for layer in range(len(self.encoder.layer)):

@@ -1,4 +1,5 @@
 from math import sqrt
+from torch.nn import Linear
 
 
 def copy_same_uniform(W):
@@ -35,6 +36,30 @@ def interpolate_linear_layer(layer, mask, dim=-1, other_layer=None):
         b.masked_fill_(mask.eq(0), 0)
         layer.bias.data += b
         layer.bias.requires_grad = True
+
+def prune_linear_layer(layer, dims, dim=-1):
+    """Interpolates between linear layers.
+    If the second layer is not provided, interpolate with random"""
+    dim = (dim+100) % 2
+    W = layer.weight.index_select(dim, dims).clone().detach()
+    print(W.size())
+    if layer.bias is not None:
+        if dim == 1:
+            b = layer.bias.clone().detach()
+        else:
+            b = layer.bias[dims].clone().detach()
+    new_size = list(layer.weight.size())
+    new_size[dim] = len(dims)
+    new_layer = Linear(new_size[1], new_size[0], bias=layer.bias is not None)
+    new_layer.weight.requires_grad = False
+    new_layer.weight.copy_(W.contiguous())
+    new_layer.weight.requires_grad = True
+    if layer.bias is not None:
+        new_layer.bias.requires_grad = False
+        new_layer.bias.copy_(b.contiguous())
+        new_layer.bias.requires_grad = True
+    return new_layer
+
 
 
 def mask_grad_linear_layer(layer, mask, dim=-1):

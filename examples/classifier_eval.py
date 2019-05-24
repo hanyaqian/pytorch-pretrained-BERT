@@ -1,5 +1,6 @@
 from tqdm import tqdm
 from itertools import islice
+import time
 
 import numpy as np
 import torch
@@ -64,12 +65,14 @@ def evaluate(
     all_labels = []
     eval_iterator = tqdm(
         eval_dataloader, desc="Evaluating", disable=disable_progress_bar)
+    inference_time = 0
     for input_ids, input_mask, segment_ids, label_ids in eval_iterator:
         input_ids = input_ids.to(device)
         input_mask = input_mask.to(device)
         segment_ids = segment_ids.to(device)
         label_ids = label_ids.to(device)
 
+        inference_time -= time.time()
         with torch.no_grad():
             tmp_eval_loss = model(
                 input_ids, segment_ids, input_mask, label_ids)
@@ -78,6 +81,7 @@ def evaluate(
 
         logits = logits.detach().cpu().numpy()
         predictions = np.argmax(logits, axis=-1)
+        inference_time += time.time()
         label_ids = label_ids.to('cpu').numpy()
         tmp_eval_accuracy = accuracy(logits, label_ids)
 
@@ -131,6 +135,7 @@ def evaluate(
     result = result or {}
     result["eval_loss"] = eval_loss
     result["eval_accuracy"] = eval_accuracy
+    result["inference_time"] = inference_time
     # Add task specific score
     if scorer is not None:
         all_predicitions = np.asarray(all_predicitions)

@@ -235,6 +235,15 @@ class MnliProcessor(DataProcessor):
             examples.append(example)
         return examples
 
+class MnliMismatchedProcessor(MnliProcessor):
+    """Processor for the MultiNLI data set (GLUE version)."""
+    
+    def get_dev_examples(self, data_dir):
+        """See base class."""
+        return self._create_examples(
+            self._read_tsv(os.path.join(data_dir, "dev_mismatched.tsv")),
+            "dev_mismatched")
+
 
 class ColaProcessor(DataProcessor):
     """Processor for the CoLA data set (GLUE version)."""
@@ -452,6 +461,7 @@ def prepare_tensor_dataset(
 processors = {
     "cola": ColaProcessor,
     "mnli": MnliProcessor,
+    "mnli-mis": MnliMismatchedProcessor,
     "mrpc": MrpcProcessor,
     "sst-2": Sst2Processor,
 }
@@ -459,6 +469,7 @@ processors = {
 num_labels_task = {
     "cola": 2,
     "mnli": 3,
+    "mnli-mis": 3,
     "mrpc": 2,
     "sst-2": 2,
 }

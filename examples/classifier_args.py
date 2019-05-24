@@ -205,6 +205,11 @@ def pruning_args(parser):
         help="Normalize importance score by layers for pruning"
     )
     prune_group.add_argument(
+        "--actually_prune",
+        action='store_true',
+        help="Really prune (like, for real)"
+    )
+    prune_group.add_argument(
         "--at_least_x_heads_per_layer",
         type=int,
         default=0,

@@ -269,7 +269,10 @@ def main():
         reverse_descriptors=args.reverse_head_mask,
     )
     # Mask heads
-    model.bert.mask_heads(to_prune)
+    if args.actually_prune:
+        model.bert.prune_heads(to_prune)
+    else:
+        model.bert.mask_heads(to_prune)
 
     # ==== PREPARE TRAINING ====
 
@@ -415,7 +418,10 @@ def main():
                 at_least_x_heads_per_layer=args.at_least_x_heads_per_layer
             )
             # Actually mask the heads
-            model.bert.mask_heads(to_prune)
+            if args.actually_prune:
+                model.bert.prune_heads(to_prune)
+            else:
+                model.bert.mask_heads(to_prune)
             # Maybe continue training a bit
             if args.n_retrain_steps_after_pruning > 0:
                 set_seeds(args.seed + step + 1, n_gpu)

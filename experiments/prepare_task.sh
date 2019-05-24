@@ -50,7 +50,7 @@ function run_eval () {
     --output_dir $model_dir 2>&1
 }
 
-if [ ! -f $model_dir/pytorch_model.bin ]
+if [ ! -e $model_dir/pytorch_model.bin ]
 then
     run_train
 fi
@@ -66,5 +66,6 @@ fi
 
 if [ "$EVAL" = "1" ]
 then
+    run_eval ""
     base_acc=$(run_eval "" | grep $metric | rev | cut -d" " -f1 | rev)
 fi
