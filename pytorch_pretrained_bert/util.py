@@ -50,7 +50,7 @@ def prune_linear_layer(layer, dims, dim=-1):
             b = layer.bias[dims].clone().detach()
     new_size = list(layer.weight.size())
     new_size[dim] = len(dims)
-    new_layer = Linear(new_size[1], new_size[0], bias=layer.bias is not None)
+    new_layer = Linear(new_size[1], new_size[0], bias=layer.bias is not None).to(W.device)
     new_layer.weight.requires_grad = False
     new_layer.weight.copy_(W.contiguous())
     new_layer.weight.requires_grad = True

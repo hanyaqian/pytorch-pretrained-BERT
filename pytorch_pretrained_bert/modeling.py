@@ -344,10 +344,10 @@ class BertAttention(nn.Module):
         mask = mask.view(-1).contiguous().eq(1).to(device)
         dims = torch.arange(len(mask)).to(device)[mask].long()
         # Change linear layers
-        self.self.query = prune_linear_layer(self.self.query, dims)
-        self.self.key = prune_linear_layer(self.self.key, dims)
-        self.self.value = prune_linear_layer(self.self.value, dims)
-        self.output.dense = prune_linear_layer(self.output.dense, dims, dim=0)
+        self.self.query = prune_linear_layer(self.self.query, dims, dim=0)
+        self.self.key = prune_linear_layer(self.self.key, dims, dim=0)
+        self.self.value = prune_linear_layer(self.self.value, dims, dim=0)
+        self.output.dense = prune_linear_layer(self.output.dense, dims, dim=1)
         # change hyper params
         self.self.n_heads = self.self.n_heads - len(heads)
         self.self.d_hidden = self.self.d_head * self.self.n_heads
@@ -789,7 +789,7 @@ class BertModel(PreTrainedBertModel):
             if layer in to_mask:
                 heads = to_mask[layer]
                 att = self.encoder.layer[layer].attention
-                att.prune_heads(to_mask)
+                att.prune_heads(heads)
 
     def clear_heads_mask(self):
         for layer in range(len(self.encoder.layer)):

@@ -274,6 +274,7 @@ def main():
     else:
         model.bert.mask_heads(to_prune)
 
+
     # ==== PREPARE TRAINING ====
 
     # Trainable parameters
@@ -360,7 +361,10 @@ def main():
         reverse_descriptors=args.reverse_head_mask,
     )
     # Mask heads
-    model.bert.mask_heads(to_prune)
+    if args.actually_prune:
+        model.bert.prune_heads(to_prune)
+    else:
+        model.bert.mask_heads(to_prune)
 
     # ==== PRUNE ====
     if args.do_prune and is_main:
@@ -524,7 +528,7 @@ def main():
             model,
             args.eval_batch_size,
             save_attention_probs=args.save_attention_probs,
-            print_head_entropy=True,
+            print_head_entropy=False,
             device=device,
             result=result,
             disable_progress_bar=args.no_progress_bars,

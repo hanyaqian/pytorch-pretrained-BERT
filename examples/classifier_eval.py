@@ -94,6 +94,8 @@ def evaluate(
         nb_eval_examples += input_ids.size(0)
         nb_eval_steps += 1
 
+        if not print_head_entropy:
+            continue
         # Record attention entropy
         for layer, attn in enumerate(attns):
             mask = input_mask.float()
