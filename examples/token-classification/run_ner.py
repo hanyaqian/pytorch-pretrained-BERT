@@ -117,8 +117,8 @@ def main():
 
     module = import_module("tasks")
     try:
-        token_classification_task_clazz = getattr(module, model_args.task_type)
-        token_classification_task: TokenClassificationTask = token_classification_task_clazz()
+        token_classification_task_class = getattr(module, model_args.task_type)
+        token_classification_task: TokenClassificationTask = token_classification_task_class()
     except AttributeError:
         raise ValueError(
             f"Task {model_args.task_type} needs to be defined as a TokenClassificationTask subclass in {module}. "
